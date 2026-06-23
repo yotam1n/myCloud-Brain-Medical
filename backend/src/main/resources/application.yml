@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: cloud-brain-medical-backend
+  main:
+    banner-mode: off
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  datasource:
+    url: ${DB_URL:jdbc:h2:mem:cloudbrain_medical;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+  flyway:
+    enabled: true
+
+server:
+  port: 8080
+
+app:
+  security:
+    jwt-secret: cloud-brain-medical-dev-secret-change-me
+    jwt-ttl-minutes: 720
