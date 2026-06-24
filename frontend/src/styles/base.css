@@ -960,7 +960,6 @@ button {
   .patient-page .section-head > .button-secondary,
   .patient-page .section-head > .button-danger,
   .patient-page .section-head > .button-ghost,
-  .patient-page > .band > .toolbar .button-ghost,
   .patient-page .button-secondary,
   .patient-page .button-danger {
     width: 100%;
