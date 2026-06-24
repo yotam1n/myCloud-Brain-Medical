@@ -1,5 +1,8 @@
 package com.cloudbrain.application.workflow;
 
+import com.cloudbrain.application.ai.AIInvocationService;
+import com.cloudbrain.application.ai.AIModels;
+import com.cloudbrain.application.ai.AITextParser;
 import com.cloudbrain.common.exception.ApiException;
 import com.cloudbrain.dto.workflow.WorkflowDtos.AiUsageBucket;
 import com.cloudbrain.dto.workflow.WorkflowDtos.AiUsageStats;
@@ -13,6 +16,7 @@ import com.cloudbrain.dto.workflow.WorkflowDtos.DoctorOption;
 import com.cloudbrain.dto.workflow.WorkflowDtos.DrugOption;
 import com.cloudbrain.dto.workflow.WorkflowDtos.FeedbackCreateRequest;
 import com.cloudbrain.dto.workflow.WorkflowDtos.FeedbackResponse;
+import com.cloudbrain.dto.workflow.WorkflowDtos.AiContentAttachment;
 import com.cloudbrain.dto.workflow.WorkflowDtos.MedicalRecordGenerateRequest;
 import com.cloudbrain.dto.workflow.WorkflowDtos.MedicalRecordSaveRequest;
 import com.cloudbrain.dto.workflow.WorkflowDtos.MedicalRecordSummary;
@@ -95,6 +99,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -130,6 +135,7 @@ public class WorkflowService {
     private final PrescriptionRuleDefinitionJpaRepository ruleRepository;
     private final AIConfigJpaRepository aiConfigRepository;
     private final PromptTemplateJpaRepository promptTemplateRepository;
+    private final AIInvocationService aiInvocationService;
     private final NotificationRecordJpaRepository notificationRecordRepository;
     private final FeedbackJpaRepository feedbackRepository;
     private final TriageAccuracyFeedbackJpaRepository triageAccuracyFeedbackRepository;
@@ -152,6 +158,7 @@ public class WorkflowService {
                            PrescriptionRuleDefinitionJpaRepository ruleRepository,
                            AIConfigJpaRepository aiConfigRepository,
                            PromptTemplateJpaRepository promptTemplateRepository,
+                           AIInvocationService aiInvocationService,
                            NotificationRecordJpaRepository notificationRecordRepository,
                            FeedbackJpaRepository feedbackRepository,
                            TriageAccuracyFeedbackJpaRepository triageAccuracyFeedbackRepository,
@@ -173,6 +180,7 @@ public class WorkflowService {
         this.ruleRepository = ruleRepository;
         this.aiConfigRepository = aiConfigRepository;
         this.promptTemplateRepository = promptTemplateRepository;
+        this.aiInvocationService = aiInvocationService;
         this.notificationRecordRepository = notificationRecordRepository;
         this.feedbackRepository = feedbackRepository;
         this.triageAccuracyFeedbackRepository = triageAccuracyFeedbackRepository;
@@ -296,9 +304,23 @@ public class WorkflowService {
                 .map(doctor -> toDoctorOption(doctor, departments.get(doctor.getDepartmentId())))
                 .toList();
         List<ScheduleOption> schedules = listAvailableSchedules(department.getId());
-        String reason = buildTriageReason(chiefComplaint, department, doctors);
+        String localReason = buildTriageReason(chiefComplaint, department, doctors);
+        AIModels.AIExecutionOutcome<String> aiOutcome = invokeAi(
+                "TRIAGE",
+                department.getCode(),
+                Map.of(
+                        "chiefComplaint", chiefComplaint,
+                        "departmentName", department.getName(),
+                        "doctorNames", doctors.stream().map(DoctorOption::name).filter(Objects::nonNull).collect(Collectors.joining(", "))
+                ),
+                request.attachments(),
+                localReason,
+                false,
+                null
+        );
+        String reason = firstNonBlank(aiOutcome.result(), localReason);
 
-        AICallRecordEntity callRecord = aiCallRecord("TRIAGE", actorContext, chiefComplaint, reason, started);
+        AICallRecordEntity callRecord = aiCallRecord("TRIAGE", actorContext, chiefComplaint, reason, started, aiOutcome.meta());
         callRecord = aiCallRecordRepository.save(callRecord);
 
         TriageRecordEntity triageRecord = new TriageRecordEntity();
@@ -308,7 +330,7 @@ public class WorkflowService {
         triageRecord.setRecommendedDoctors(doctors.stream().map(DoctorOption::name).collect(Collectors.joining(", ")));
         triageRecord.setAiResponseRaw(reason);
         triageRecord.setCallStatus("COMPLETED");
-        triageRecord.setRecommendationSource("LOCAL_RULE");
+        triageRecord.setRecommendationSource(aiOutcome.meta().provider());
         triageRecord.setAiCallRecordId(callRecord.getId());
         triageRecord = triageRecordRepository.save(triageRecord);
 
@@ -485,30 +507,55 @@ public class WorkflowService {
 
     @Transactional
     public MedicalRecordSummary generateMedicalRecord(ActorContext actorContext, MedicalRecordGenerateRequest request) {
+        return generateMedicalRecord(actorContext, request, null);
+    }
+
+    @Transactional
+    public MedicalRecordSummary generateMedicalRecord(ActorContext actorContext,
+                                                      MedicalRecordGenerateRequest request,
+                                                      Consumer<String> chunkConsumer) {
         Long doctorId = requireDoctor(actorContext);
         RegistrationEntity registration = requireDoctorRegistration(request.registrationId(), doctorId);
         PatientEntity patient = patientRepository.findById(registration.getPatientId()).orElseThrow(() -> notFound("patient not found"));
         long started = System.currentTimeMillis();
         String chief = firstSentence(request.conversationText());
-        String diagnosis = firstNonBlank(request.diagnosisDirection(), inferDiagnosis(request.conversationText()));
+        String fallbackDiagnosis = firstNonBlank(request.diagnosisDirection(), inferDiagnosis(request.conversationText()));
+        Map<String, String> variables = new LinkedHashMap<>();
+        variables.put("conversationText", request.conversationText());
+        variables.put("diagnosisDirection", fallbackDiagnosis);
+        String departmentName = departmentNameByRegistration(registration);
+        if (departmentName != null) {
+            variables.put("departmentName", departmentName);
+        }
+        AIModels.AIExecutionOutcome<String> aiOutcome = invokeAi(
+                "MEDICAL_RECORD",
+                departmentCodeByRegistration(registration),
+                variables,
+                request.attachments(),
+                buildMedicalRecordFallbackText(chief, request.conversationText(), patient, fallbackDiagnosis),
+                chunkConsumer != null,
+                chunkConsumer
+        );
+        MedicalRecordDraft aiDraft = parseMedicalRecordDraft(aiOutcome.result());
+        String diagnosis = firstNonBlank(aiDraft.preliminaryDiagnosis(), fallbackDiagnosis);
 
         MedicalRecordEntity draft = new MedicalRecordEntity();
         draft.setPatientId(patient.getId());
         draft.setDoctorId(doctorId);
         draft.setRegistrationId(registration.getId());
-        draft.setChiefComplaint(chief);
-        draft.setPresentIllness(request.conversationText());
-        draft.setPastHistory(firstNonBlank(patient.getMedicalHistory(), "未见特殊既往史。"));
-        draft.setPhysicalExam("生命体征平稳，建议医生结合查体补充。");
+        draft.setChiefComplaint(firstNonBlank(aiDraft.chiefComplaint(), chief));
+        draft.setPresentIllness(firstNonBlank(aiDraft.presentIllness(), request.conversationText()));
+        draft.setPastHistory(firstNonBlank(aiDraft.pastHistory(), firstNonBlank(patient.getMedicalHistory(), "未见特殊既往史。")));
+        draft.setPhysicalExam(firstNonBlank(aiDraft.physicalExam(), "生命体征平稳，建议医生结合查体补充。"));
         draft.setPreliminaryDiagnosis(diagnosis);
-        draft.setTreatmentPlan(buildTreatmentPlan(diagnosis));
+        draft.setTreatmentPlan(firstNonBlank(aiDraft.treatmentPlan(), buildTreatmentPlan(diagnosis)));
         draft.setConversationText(request.conversationText());
         draft.setAiGenerated(true);
-        draft.setDocNote("本地模拟 AI 已根据问诊文本生成结构化病历草稿，请医生确认。");
+        draft.setDocNote(firstNonBlank(aiDraft.docNote(), "本地模拟 AI 已根据问诊文本生成结构化病历草稿，请医生确认。"));
         draft.setVersion(0);
 
         String output = draft.getChiefComplaint() + " | " + draft.getPreliminaryDiagnosis();
-        AICallRecordEntity callRecord = aiCallRecord("MEDICAL_RECORD", actorContext, request.conversationText(), output, started);
+        AICallRecordEntity callRecord = aiCallRecord("MEDICAL_RECORD", actorContext, request.conversationText(), output, started, aiOutcome.meta());
         callRecord = aiCallRecordRepository.save(callRecord);
         draft.setAiCallRecordId(callRecord.getId());
         callRecord.setBusinessRecordId(registration.getId());
@@ -618,16 +665,46 @@ public class WorkflowService {
 
     @Transactional
     public DiagnosisSuggestionResponse suggestDiagnosis(ActorContext actorContext, DiagnosisSuggestionRequest request) {
+        return suggestDiagnosis(actorContext, request, null);
+    }
+
+    @Transactional
+    public DiagnosisSuggestionResponse suggestDiagnosis(ActorContext actorContext,
+                                                       DiagnosisSuggestionRequest request,
+                                                       Consumer<String> chunkConsumer) {
         Long doctorId = requireDoctor(actorContext);
         RegistrationEntity registration = requireDoctorRegistration(request.registrationId(), doctorId);
         long started = System.currentTimeMillis();
-        String diagnosis = inferDiagnosis(request.conversationText());
+        String fallbackDiagnosis = inferDiagnosis(request.conversationText());
+        Map<String, String> variables = new LinkedHashMap<>();
+        variables.put("conversationText", request.conversationText());
+        variables.put("diagnosisDirection", firstNonBlank(request.diagnosisDirection(), fallbackDiagnosis));
+        String departmentName = departmentNameByRegistration(registration);
+        if (departmentName != null) {
+            variables.put("departmentName", departmentName);
+        }
+        AIModels.AIExecutionOutcome<String> aiOutcome = invokeAi(
+                "DIAGNOSIS",
+                departmentCodeByRegistration(registration),
+                variables,
+                request.attachments(),
+                String.join("\n",
+                        "suggestedDiagnoses: " + fallbackDiagnosis + "；鉴别：焦虑相关不适、消化系统不适、呼吸系统感染。",
+                        "suggestedExamItems: " + suggestExamItems(fallbackDiagnosis),
+                        "summary: 本地规则根据关键词生成诊疗建议，供医生参考。",
+                        "finalDiagnosisDirection: " + fallbackDiagnosis
+                ),
+                chunkConsumer != null,
+                chunkConsumer
+        );
+        Map<String, String> parsed = AITextParser.parseKeyValueBlock(aiOutcome.result());
+        String diagnosis = firstNonBlank(AITextParser.firstNonBlank(parsed, "finalDiagnosisDirection", null), fallbackDiagnosis);
         DiagnosisSuggestionRecordEntity entity = new DiagnosisSuggestionRecordEntity();
         entity.setRegistrationId(registration.getId());
         entity.setPatientId(registration.getPatientId());
         entity.setDoctorId(doctorId);
-        entity.setSuggestedDiagnoses(diagnosis + "\n鉴别：焦虑相关不适、消化系统不适、呼吸系统感染。");
-        entity.setSuggestedExamItems(suggestExamItems(diagnosis));
+        entity.setSuggestedDiagnoses(firstNonBlank(AITextParser.firstNonBlank(parsed, "suggestedDiagnoses", null), diagnosis + "\n鉴别：焦虑相关不适、消化系统不适、呼吸系统感染。"));
+        entity.setSuggestedExamItems(firstNonBlank(AITextParser.firstNonBlank(parsed, "suggestedExamItems", null), suggestExamItems(diagnosis)));
         entity.setAdoptionStatus("SUGGESTED");
         entity.setFinalDiagnosisDirection(diagnosis);
         entity = diagnosisSuggestionRepository.save(entity);
@@ -637,7 +714,8 @@ public class WorkflowService {
                 actorContext,
                 request.conversationText(),
                 entity.getSuggestedDiagnoses(),
-                started
+                started,
+                aiOutcome.meta()
         );
         callRecord.setBusinessRecordId(entity.getId());
         callRecord = aiCallRecordRepository.save(callRecord);
@@ -655,6 +733,13 @@ public class WorkflowService {
 
     @Transactional
     public PrescriptionReviewResponse reviewPrescription(ActorContext actorContext, PrescriptionReviewRequest request) {
+        return reviewPrescription(actorContext, request, null);
+    }
+
+    @Transactional
+    public PrescriptionReviewResponse reviewPrescription(ActorContext actorContext,
+                                                        PrescriptionReviewRequest request,
+                                                        Consumer<String> chunkConsumer) {
         Long doctorId = requireDoctor(actorContext);
         RegistrationEntity registration = requireDoctorRegistration(request.registrationId(), doctorId);
         if (!List.of(MEDICAL_RECORD_SAVED, PRESCRIPTION_REVIEWED, PRESCRIPTION_SUBMITTED).contains(registration.getStatus())) {
@@ -667,12 +752,31 @@ public class WorkflowService {
                         .orElseThrow(() -> notFound("drug not found: " + item.drugId())))
                 .toList();
         ReviewComputation review = computeReview(registration, request.items(), drugs);
+        Map<String, String> variables = new LinkedHashMap<>();
+        variables.put("riskLevel", review.riskLevel());
+        variables.put("localRuleHits", review.localRuleHits());
+        variables.put("missingItems", review.contextMissingItems());
+        variables.put("prescriptionSummary", review.summary());
+        AIModels.AIExecutionOutcome<String> aiOutcome = invokeAi(
+                "PRESCRIPTION_REVIEW",
+                departmentCodeByRegistration(registration),
+                variables,
+                request.attachments(),
+                String.join("\n",
+                        "llmSuggestion: " + review.suggestion(),
+                        "llmSummary: " + review.summary()
+                ),
+                chunkConsumer != null,
+                chunkConsumer
+        );
+        Map<String, String> reviewParsed = AITextParser.parseKeyValueBlock(aiOutcome.result());
         AICallRecordEntity callRecord = aiCallRecord(
                 "PRESCRIPTION_REVIEW",
                 actorContext,
                 drugs.stream().map(DrugEntity::getName).collect(Collectors.joining(", ")),
-                review.summary(),
-                started
+                firstNonBlank(AITextParser.firstNonBlank(reviewParsed, "llmSummary", null), review.summary()),
+                started,
+                aiOutcome.meta()
         );
         callRecord = aiCallRecordRepository.save(callRecord);
 
@@ -684,9 +788,9 @@ public class WorkflowService {
         entity.setLocalRuleHits(review.localRuleHits());
         entity.setRuleEngineStatus("COMPLETED");
         entity.setContextMissingItems(review.contextMissingItems());
-        entity.setLlmSuggestion(review.suggestion());
-        entity.setLlmSummary(review.summary());
-        entity.setLlmCallStatus("LOCAL_SIMULATED");
+        entity.setLlmSuggestion(firstNonBlank(AITextParser.firstNonBlank(reviewParsed, "llmSuggestion", null), review.suggestion()));
+        entity.setLlmSummary(firstNonBlank(AITextParser.firstNonBlank(reviewParsed, "llmSummary", null), review.summary()));
+        entity.setLlmCallStatus(aiOutcome.meta().provider());
         entity.setAiCallRecordId(callRecord.getId());
         entity.setPrescriptionSnapshotHash(hashItems(request.items()));
         entity.setReviewContextHash(hashContext(registration));
@@ -1147,6 +1251,91 @@ public class WorkflowService {
                 + "。理由：症状关键词与该科室常见就诊范围匹配。" + doctorText;
     }
 
+    private AIModels.AIExecutionOutcome<String> invokeAi(String taskType,
+                                                         String deptCode,
+                                                         Map<String, String> variables,
+                                                         List<AiContentAttachment> attachments,
+                                                         String fallbackText,
+                                                         boolean stream,
+                                                         Consumer<String> chunkConsumer) {
+        List<AIModels.AIContentPart> parts = attachments == null
+                ? List.of()
+                : attachments.stream().map(this::toContentPart).toList();
+        return aiInvocationService.chat(taskType, deptCode, variables, parts, fallbackText, stream, chunkConsumer);
+    }
+
+    private AIModels.AIContentPart toContentPart(AiContentAttachment attachment) {
+        if (attachment == null) {
+            return AIModels.AIContentPart.text("");
+        }
+        String type = firstNonBlank(attachment.type(), "text").toLowerCase(Locale.ROOT);
+        return switch (type) {
+            case "image", "image_url" -> AIModels.AIContentPart.imageUrl(attachment.url(), firstNonBlank(attachment.detail(), "auto"));
+            case "video", "video_url" -> AIModels.AIContentPart.videoUrl(attachment.url());
+            case "audio", "input_audio" -> AIModels.AIContentPart.inputAudio(attachment.data(), firstNonBlank(attachment.mimeType(), "mp3"));
+            case "file", "file_url" -> AIModels.AIContentPart.fileUrl(attachment.url(), attachment.mimeType(), attachment.name());
+            default -> AIModels.AIContentPart.text(firstNonBlank(firstNonBlank(attachment.data(), attachment.url()), attachment.name()));
+        };
+    }
+
+    private String departmentNameByRegistration(RegistrationEntity registration) {
+        if (registration == null) {
+            return null;
+        }
+        return departmentRepository.findById(registration.getDepartmentId())
+                .map(DepartmentEntity::getName)
+                .orElse(registration.getDepartmentSnapshot());
+    }
+
+    private String departmentCodeByRegistration(RegistrationEntity registration) {
+        if (registration == null) {
+            return null;
+        }
+        return departmentRepository.findById(registration.getDepartmentId())
+                .map(DepartmentEntity::getCode)
+                .orElse(null);
+    }
+
+    private String buildMedicalRecordFallbackText(String chief,
+                                                  String conversationText,
+                                                  PatientEntity patient,
+                                                  String diagnosis) {
+        String resolvedDiagnosis = firstNonBlank(diagnosis, inferDiagnosis(conversationText));
+        return String.join("\n",
+                "chiefComplaint: " + firstNonBlank(chief, firstSentence(conversationText)),
+                "presentIllness: " + firstNonBlank(conversationText, ""),
+                "pastHistory: " + firstNonBlank(patient.getMedicalHistory(), "未见特殊既往史"),
+                "physicalExam: 生命体征平稳，建议医生结合查体补充。",
+                "preliminaryDiagnosis: " + resolvedDiagnosis,
+                "treatmentPlan: " + buildTreatmentPlan(resolvedDiagnosis),
+                "docNote: 本地规则已生成病历草稿，请医生确认。"
+        );
+    }
+
+    private MedicalRecordDraft parseMedicalRecordDraft(String text) {
+        Map<String, String> values = AITextParser.parseKeyValueBlock(text);
+        return new MedicalRecordDraft(
+                AITextParser.firstNonBlank(values, "chiefComplaint", null),
+                AITextParser.firstNonBlank(values, "presentIllness", null),
+                AITextParser.firstNonBlank(values, "pastHistory", null),
+                AITextParser.firstNonBlank(values, "physicalExam", null),
+                AITextParser.firstNonBlank(values, "preliminaryDiagnosis", null),
+                AITextParser.firstNonBlank(values, "treatmentPlan", null),
+                AITextParser.firstNonBlank(values, "docNote", null)
+        );
+    }
+
+    private record MedicalRecordDraft(
+            String chiefComplaint,
+            String presentIllness,
+            String pastHistory,
+            String physicalExam,
+            String preliminaryDiagnosis,
+            String treatmentPlan,
+            String docNote
+    ) {
+    }
+
     private ReviewComputation computeReview(RegistrationEntity registration,
                                             List<PrescriptionItemRequest> items,
                                             List<DrugEntity> drugs) {
@@ -1252,6 +1441,29 @@ public class WorkflowService {
         entity.setTraceId(UUID.randomUUID().toString());
         entity.setDegraded(false);
         entity.setRetryCount(0);
+        return entity;
+    }
+
+    private AICallRecordEntity aiCallRecord(String taskType,
+                                            ActorContext actorContext,
+                                            String input,
+                                            String output,
+                                            long started,
+                                            AIModels.AIInvocationMeta meta) {
+        AICallRecordEntity entity = aiCallRecord(taskType, actorContext, input, output, started);
+        if (meta != null) {
+            entity.setProvider(firstNonBlank(meta.provider(), entity.getProvider()));
+            entity.setModelName(firstNonBlank(meta.modelName(), entity.getModelName()));
+            entity.setConfigVersion(firstNonBlank(meta.configVersion(), entity.getConfigVersion()));
+            entity.setPromptVersion(firstNonBlank(meta.promptVersion(), entity.getPromptVersion()));
+            entity.setRequestId(firstNonBlank(meta.requestId(), entity.getRequestId()));
+            entity.setOutputSummary(firstNonBlank(meta.responseText(), entity.getOutputSummary()));
+            entity.setCallStatus(firstNonBlank(meta.callStatus(), entity.getCallStatus()));
+            entity.setErrorSummary(blankToNull(meta.errorSummary()));
+            entity.setDurationMs(meta.durationMs() > 0 ? meta.durationMs() : entity.getDurationMs());
+            entity.setTraceId(firstNonBlank(meta.traceId(), entity.getTraceId()));
+            entity.setDegraded(meta.degraded());
+        }
         return entity;
     }
 
@@ -1703,6 +1915,10 @@ public class WorkflowService {
 
     private String firstNonBlank(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private String firstSentence(String text) {

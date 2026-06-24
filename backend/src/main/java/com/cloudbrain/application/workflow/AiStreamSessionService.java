@@ -1,6 +1,7 @@
 package com.cloudbrain.application.workflow;
 
 import com.cloudbrain.common.exception.ApiException;
+import com.cloudbrain.dto.workflow.WorkflowDtos.AiContentAttachment;
 import com.cloudbrain.dto.workflow.WorkflowDtos.AiStreamSessionCreateRequest;
 import com.cloudbrain.dto.workflow.WorkflowDtos.AiStreamSessionCreateResponse;
 import com.cloudbrain.dto.workflow.WorkflowDtos.DiagnosisSuggestionResponse;
@@ -11,6 +12,8 @@ import com.cloudbrain.security.ActorContext;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -94,21 +97,34 @@ public class AiStreamSessionService {
     private void stream(StreamSession session, SseEmitter emitter) {
         try {
             send(emitter, "meta", Map.of("sessionId", session.sessionId(), "taskType", session.taskType()));
+            AtomicBoolean streamedChunks = new AtomicBoolean(false);
+            java.util.function.Consumer<String> chunkConsumer = chunk -> {
+                try {
+                    streamedChunks.set(true);
+                    send(emitter, "chunk", Map.of("text", chunk));
+                } catch (IOException exception) {
+                    throw new RuntimeException(exception);
+                }
+            };
             Object result = "MEDICAL_RECORD".equals(session.taskType())
                     ? workflowService.generateMedicalRecord(session.actorContext(), new MedicalRecordGenerateRequest(
                             session.request().registrationId(),
                             session.request().conversationText(),
-                            session.request().diagnosisDirection()
-                    ))
+                            session.request().diagnosisDirection(),
+                            session.request().attachments()
+                    ), chunkConsumer)
                     : workflowService.suggestDiagnosis(session.actorContext(), new DiagnosisSuggestionRequest(
                             session.request().registrationId(),
                             session.request().conversationText(),
-                            session.request().diagnosisDirection()
-                    ));
+                            session.request().diagnosisDirection(),
+                            session.request().attachments()
+                    ), chunkConsumer);
             String text = result instanceof MedicalRecordSummary medicalRecord
                     ? medicalRecordText(medicalRecord)
                     : diagnosisText((DiagnosisSuggestionResponse) result);
-            streamText(session, emitter, text);
+            if (!streamedChunks.get()) {
+                streamText(session, emitter, text);
+            }
             if (!session.isCancelled()) {
                 send(emitter, "result", result);
                 send(emitter, "done", Map.of("sessionId", session.sessionId()));
@@ -127,18 +143,31 @@ public class AiStreamSessionService {
     }
 
     private void streamText(StreamSession session, SseEmitter emitter, String text) throws IOException, InterruptedException {
-        int index = 0;
-        while (index < text.length()) {
+        List<String> chunks = splitChunks(text);
+        for (String chunk : chunks) {
             if (session.isCancelled()) {
                 send(emitter, "cancelled", Map.of("sessionId", session.sessionId()));
                 emitter.complete();
                 return;
             }
-            int end = Math.min(text.length(), index + 18);
-            send(emitter, "chunk", Map.of("text", text.substring(index, end)));
-            index = end;
+            send(emitter, "chunk", Map.of("text", chunk));
             Thread.sleep(80L);
         }
+    }
+
+    private List<String> splitChunks(String text) {
+        List<String> chunks = new ArrayList<>();
+        if (text == null || text.isBlank()) {
+            return chunks;
+        }
+        int index = 0;
+        int step = 18;
+        while (index < text.length()) {
+            int end = Math.min(text.length(), index + step);
+            chunks.add(text.substring(index, end));
+            index = end;
+        }
+        return chunks;
     }
 
     private void send(SseEmitter emitter, String eventName, Object data) throws IOException {

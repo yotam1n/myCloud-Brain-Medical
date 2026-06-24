@@ -42,6 +42,28 @@ public class ConfigCipher {
         }
     }
 
+    public String decrypt(String ciphertext) {
+        if (ciphertext == null || ciphertext.isBlank()) {
+            return null;
+        }
+        try {
+            byte[] payload = Base64.getDecoder().decode(ciphertext);
+            if (payload.length <= GCM_IV_BYTES) {
+                throw new IllegalStateException("ciphertext payload is invalid");
+            }
+            byte[] iv = new byte[GCM_IV_BYTES];
+            byte[] encrypted = new byte[payload.length - GCM_IV_BYTES];
+            System.arraycopy(payload, 0, iv, 0, GCM_IV_BYTES);
+            System.arraycopy(payload, GCM_IV_BYTES, encrypted, 0, encrypted.length);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_BITS, iv));
+            byte[] decrypted = cipher.doFinal(encrypted);
+            return new String(decrypted, StandardCharsets.UTF_8);
+        } catch (Exception exception) {
+            throw new IllegalStateException("unable to decrypt secret", exception);
+        }
+    }
+
     private byte[] deriveKey(String secret) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

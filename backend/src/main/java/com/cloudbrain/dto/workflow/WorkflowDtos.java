@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 public final class WorkflowDtos {
@@ -71,8 +72,12 @@ public final class WorkflowDtos {
     }
 
     public record TriageRequest(
-            @NotBlank @Size(max = 1000) String chiefComplaint
+            @NotBlank @Size(max = 1000) String chiefComplaint,
+            List<AiContentAttachment> attachments
     ) {
+        public TriageRequest(String chiefComplaint) {
+            this(chiefComplaint, List.of());
+        }
     }
 
     public record TriageResponse(
@@ -128,8 +133,12 @@ public final class WorkflowDtos {
     public record MedicalRecordGenerateRequest(
             @NotNull Long registrationId,
             @NotBlank @Size(max = 4000) String conversationText,
-            @Size(max = 1000) String diagnosisDirection
+            @Size(max = 1000) String diagnosisDirection,
+            List<AiContentAttachment> attachments
     ) {
+        public MedicalRecordGenerateRequest(Long registrationId, String conversationText, String diagnosisDirection) {
+            this(registrationId, conversationText, diagnosisDirection, List.of());
+        }
     }
 
     public record MedicalRecordSaveRequest(
@@ -171,8 +180,12 @@ public final class WorkflowDtos {
     public record DiagnosisSuggestionRequest(
             @NotNull Long registrationId,
             @NotBlank @Size(max = 4000) String conversationText,
-            @Size(max = 1000) String diagnosisDirection
+            @Size(max = 1000) String diagnosisDirection,
+            List<AiContentAttachment> attachments
     ) {
+        public DiagnosisSuggestionRequest(Long registrationId, String conversationText, String diagnosisDirection) {
+            this(registrationId, conversationText, diagnosisDirection, List.of());
+        }
     }
 
     public record DiagnosisSuggestionResponse(
@@ -197,8 +210,12 @@ public final class WorkflowDtos {
 
     public record PrescriptionReviewRequest(
             @NotNull Long registrationId,
-            @Valid @NotEmpty List<PrescriptionItemRequest> items
+            @Valid @NotEmpty List<PrescriptionItemRequest> items,
+            List<AiContentAttachment> attachments
     ) {
+        public PrescriptionReviewRequest(Long registrationId, List<PrescriptionItemRequest> items) {
+            this(registrationId, items, List.of());
+        }
     }
 
     public record PrescriptionSubmitRequest(
@@ -422,8 +439,15 @@ public final class WorkflowDtos {
             @NotBlank @Size(max = 32) String taskType,
             @NotNull Long registrationId,
             @NotBlank @Size(max = 4000) String conversationText,
-            @Size(max = 1000) String diagnosisDirection
+            @Size(max = 1000) String diagnosisDirection,
+            List<AiContentAttachment> attachments
     ) {
+        public AiStreamSessionCreateRequest(String taskType,
+                                            Long registrationId,
+                                            String conversationText,
+                                            String diagnosisDirection) {
+            this(taskType, registrationId, conversationText, diagnosisDirection, List.of());
+        }
     }
 
     public record AiStreamSessionCreateResponse(
@@ -526,6 +550,16 @@ public final class WorkflowDtos {
             String riskSummary,
             Boolean read,
             Instant createdAt
+    ) {
+    }
+
+    public record AiContentAttachment(
+            @NotBlank @Size(max = 32) String type,
+            @Size(max = 2000) String url,
+            @Size(max = 2000) String data,
+            @Size(max = 128) String mimeType,
+            @Size(max = 32) String detail,
+            @Size(max = 255) String name
     ) {
     }
 }
