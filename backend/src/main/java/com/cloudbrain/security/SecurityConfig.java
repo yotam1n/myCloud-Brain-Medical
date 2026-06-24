@@ -40,13 +40,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/health").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/departments/**", "/api/doctors/**").permitAll()
                         .requestMatchers(HttpMethod.POST,
                                 "/api/patient/register",
                                 "/api/patient/login",
                                 "/api/doctor/login",
                                 "/api/admin/login").permitAll()
                         .requestMatchers("/api/patient/info").hasRole("PATIENT")
-                        .anyRequest().permitAll())
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/doctor/**").hasRole("DOCTOR")
+                        .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }

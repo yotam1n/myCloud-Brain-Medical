@@ -48,11 +48,29 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const authStore = useAuthStore(pinia);
 
   if (!authStore.hydrated) {
     authStore.hydrateFromStorage();
+  }
+
+  if (authStore.isAuthenticated && authStore.isExpired) {
+    if (!authStore.refreshToken) {
+      return {
+        path: '/login',
+        query: { redirect: to.fullPath, role: to.meta.role },
+      };
+    }
+
+    try {
+      await authStore.refreshSession();
+    } catch {
+      return {
+        path: '/login',
+        query: { redirect: to.fullPath, role: to.meta.role },
+      };
+    }
   }
 
   if (!to.meta.requiresAuth) {
