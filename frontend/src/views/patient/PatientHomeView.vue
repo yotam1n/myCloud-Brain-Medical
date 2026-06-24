@@ -351,7 +351,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="page">
+  <section class="page patient-page">
     <div class="band">
       <div class="band-header">
         <div>

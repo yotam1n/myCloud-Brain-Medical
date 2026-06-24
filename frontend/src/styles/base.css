@@ -239,6 +239,11 @@ button {
   gap: 1rem;
 }
 
+.patient-page,
+.patient-page * {
+  min-width: 0;
+}
+
 .band,
 .panel {
   border: 1px solid var(--border);
@@ -726,6 +731,11 @@ button {
   line-height: 1.5;
 }
 
+.patient-page .candidate-item {
+  width: 100%;
+  text-align: left;
+}
+
 .empty-state {
   padding: 1rem;
   border: 1px dashed var(--border);
@@ -819,11 +829,22 @@ button {
   .auth-layout {
     grid-template-columns: 1fr;
   }
+
+  .patient-page .detail-grid,
+  .patient-page .detail-grid.two,
+  .patient-page .detail-grid.three {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
+  body {
+    overflow-x: hidden;
+  }
+
   .workspace {
-    width: min(1180px, calc(100% - 1rem));
+    width: 100%;
+    padding: 0.75rem 0.5rem 1rem;
   }
 
   .launch-grid,
@@ -831,20 +852,169 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .band {
+    padding: 0.75rem;
+  }
+
   .band-header {
     flex-direction: column;
   }
 
   .topbar {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+
+  .brand {
+    width: 100%;
+  }
+
+  .brand-mark {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .topnav,
+  .status-bar,
+  .patient-page .toolbar {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 0.15rem;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .topnav::-webkit-scrollbar,
+  .status-bar::-webkit-scrollbar,
+  .patient-page .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .topnav {
+    grid-column: auto;
+  }
+
+  .nav-link,
+  .status-bar .status-chip,
+  .patient-page .toolbar .pill,
+  .patient-page .toolbar .button-ghost {
+    flex: 0 0 auto;
+  }
+
+  .nav-link {
+    min-height: 2.75rem;
     padding-inline: 0.75rem;
+  }
+
+  .top-actions {
+    justify-content: space-between;
+    min-width: 0;
+  }
+
+  .session-chip {
+    flex: 1 1 auto;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .session-chip span:last-child,
+  .status-chip span:last-child,
+  .pill span,
+  .mini-item-title,
+  .mini-item-copy,
+  .candidate-item h4,
+  .candidate-item p {
+    overflow-wrap: anywhere;
   }
 
   .field-grid {
     grid-template-columns: 1fr;
   }
 
+  .field input,
+  .field textarea,
+  .field select,
+  .control {
+    font-size: 16px;
+  }
+
+  .detail-grid,
+  .detail-grid.two,
+  .detail-grid.three {
+    grid-template-columns: 1fr;
+  }
+
+  .section {
+    padding: 0.85rem;
+  }
+
+  .patient-page .section-head {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .patient-page .section-head > .button-secondary,
+  .patient-page .section-head > .button-danger,
+  .patient-page .section-head > .button-ghost,
+  .patient-page > .band > .toolbar .button-ghost,
+  .patient-page .button-secondary,
+  .patient-page .button-danger {
+    width: 100%;
+  }
+
+  .patient-page .button-secondary,
+  .patient-page .button-danger,
+  .patient-page .button-ghost {
+    min-height: 2.75rem;
+  }
+
+  .patient-page .candidate-list {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-page .mini-item {
+    padding: 0.75rem;
+  }
+
+  .patient-page .mini-item-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .patient-page .overflow-list {
+    max-height: none;
+    padding-right: 0;
+  }
+
   .chart-grid,
   .review-rate-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .workspace {
+    padding-inline: 0.35rem;
+  }
+
+  .band,
+  .section {
+    padding: 0.7rem;
+  }
+
+  .status-chip {
+    padding-inline: 0.65rem;
+  }
+
+  .patient-page .mini-item-head {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-page .mini-item-head .pill {
+    justify-self: start;
   }
 }
