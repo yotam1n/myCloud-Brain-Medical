@@ -11,7 +11,7 @@ Backend with project-local MySQL (recommended on this machine):
 
 This starts a project-local MySQL instance on `127.0.0.1:3307`, creates database `cloudbrain_medical`, creates user `cloudbrain / cloudbrain_dev`, and starts the backend with the `mysql` profile.
 
-If port `8080` is already occupied:
+If port `8088` is already occupied:
 ```powershell
 .\start-backend-mysql.ps1 -Port 8081
 ```
@@ -61,8 +61,8 @@ java -jar backend\target\cloud-brain-medical-backend-0.1.0-SNAPSHOT.jar
 ```
 
 URLs:
-- Backend: `http://localhost:8080`
-- Health check: `http://localhost:8080/api/health`
+- Backend: `http://localhost:8088`
+- Health check: `http://localhost:8088/api/health`
 - Frontend: `http://localhost:5173`
 
 Realtime and dashboard checks:

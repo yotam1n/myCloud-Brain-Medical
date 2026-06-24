@@ -336,12 +336,19 @@ button {
 .segment {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.45rem;
+  min-height: 2.5rem;
   padding: 0.55rem 0.8rem;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   color: var(--muted);
+  white-space: nowrap;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .segment.active {
@@ -553,6 +560,47 @@ button {
   line-height: 1.5;
 }
 
+.workspace-tabs {
+  margin-top: 0.75rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.workspace-overview {
+  margin-top: 0.75rem;
+}
+
+.workspace-overview .detail-grid {
+  align-items: start;
+}
+
+.workspace-overview .mini-item {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.workspace-overview .action-row {
+  margin-top: 0.25rem;
+}
+
+.workspace-grid {
+  align-items: start;
+}
+
+.workspace-grid.workspace-grid-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace-grid > .stack {
+  min-width: 0;
+}
+
+.page .metric-grid {
+  margin-top: 0.75rem;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -671,6 +719,30 @@ button {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
+  min-width: 0;
+}
+
+button.candidate-item,
+li.mini-item,
+.segment,
+.button-secondary,
+.button-danger,
+.button-ghost {
+  touch-action: manipulation;
+}
+
+li.mini-item,
+button.candidate-item {
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+li.mini-item:hover,
+button.candidate-item:hover {
+  border-color: rgba(17, 107, 102, 0.28);
+  box-shadow: 0 8px 18px rgba(18, 33, 31, 0.05);
 }
 
 .mini-item-head {
@@ -878,6 +950,7 @@ button {
 
   .topnav,
   .status-bar,
+  .workspace-tabs,
   .patient-page .toolbar {
     flex-wrap: nowrap;
     justify-content: flex-start;
@@ -890,6 +963,7 @@ button {
 
   .topnav::-webkit-scrollbar,
   .status-bar::-webkit-scrollbar,
+  .workspace-tabs::-webkit-scrollbar,
   .patient-page .toolbar::-webkit-scrollbar {
     display: none;
   }
@@ -899,10 +973,19 @@ button {
   }
 
   .nav-link,
+  .workspace-tabs .segment,
   .status-bar .status-chip,
   .patient-page .toolbar .pill,
   .patient-page .toolbar .button-ghost {
     flex: 0 0 auto;
+  }
+
+  .workspace-tabs {
+    margin-inline: -0.1rem;
+  }
+
+  .workspace-tabs .segment {
+    min-width: 5rem;
   }
 
   .nav-link {
@@ -952,9 +1035,20 @@ button {
     padding: 0.85rem;
   }
 
+  .section-head,
   .patient-page .section-head {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .section-head > .action-row {
+    width: 100%;
+  }
+
+  .section-head > .action-row .button-secondary,
+  .section-head > .action-row .button-danger,
+  .section-head > .action-row .button-ghost {
+    flex: 1 1 9rem;
   }
 
   .patient-page .section-head > .button-secondary,
@@ -985,6 +1079,11 @@ button {
   }
 
   .patient-page .overflow-list {
+    max-height: none;
+    padding-right: 0;
+  }
+
+  .workspace-grid .overflow-list {
     max-height: none;
     padding-right: 0;
   }

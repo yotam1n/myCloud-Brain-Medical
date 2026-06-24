@@ -143,6 +143,14 @@ const selectedRegistration = computed<RegistrationSummary | null>(() => {
 const overviewTone = computed(() => (error.value ? 'danger' : loading.value ? 'loading' : 'healthy'));
 const workspaceTone = computed(() => (workspaceLoading.value ? 'loading' : workspace.value ? 'healthy' : 'neutral'));
 const unreadNotificationCount = computed(() => notifications.value.filter((item) => item.read !== true).length);
+const doctorPanels = [
+  { id: 'overview', label: '总览' },
+  { id: 'consultation', label: '接诊' },
+  { id: 'history', label: '历史' },
+  { id: 'schedule', label: '排班' },
+] as const;
+
+const activeDoctorPanel = ref<(typeof doctorPanels)[number]['id']>('overview');
 
 const filteredPrescriptions = computed(() => {
   const keyword = drugSearch.value.trim().toLowerCase();
@@ -788,7 +796,83 @@ onBeforeUnmount(() => {
 
       <p class="auth-error" v-if="error">{{ error }}</p>
 
-      <div class="metric-grid">
+      <div class="segmented workspace-tabs">
+        <button
+          v-for="panel in doctorPanels"
+          :key="panel.id"
+          type="button"
+          class="segment"
+          :class="{ active: activeDoctorPanel === panel.id }"
+          @click="activeDoctorPanel = panel.id"
+        >
+          <span>{{ panel.label }}</span>
+        </button>
+      </div>
+
+      <section class="section workspace-overview" v-show="activeDoctorPanel === 'overview'">
+        <div class="section-head">
+          <div>
+            <h3 class="section-title">工作台总览</h3>
+            <p class="section-copy">把当前队列、工作区和告警先放在这一屏，方便医生快速判断下一步。</p>
+          </div>
+          <button class="button-secondary" type="button" @click="activeDoctorPanel = 'consultation'">
+            <Stethoscope :size="16" />
+            <span>进入接诊</span>
+          </button>
+        </div>
+
+        <div class="detail-grid two">
+          <div class="mini-item">
+            <div class="mini-item-head">
+              <div class="mini-item-title">当前患者</div>
+              <span class="pill">{{ selectedRegistration?.status || '空闲' }}</span>
+            </div>
+            <div class="mini-item-meta">
+              <span>{{ selectedRegistration?.patientName || '未选择' }}</span>
+              <span>{{ workspace?.registration.chiefComplaint || selectedRegistration?.chiefComplaint || '未记录' }}</span>
+            </div>
+            <p class="mini-item-copy">{{ workspace?.nextActions.join(' / ') || '请选择一个待接诊号源' }}</p>
+          </div>
+
+          <div class="mini-item">
+            <div class="mini-item-head">
+              <div class="mini-item-title">实时状态</div>
+              <span class="pill" :data-tone="notificationSocketState === 'connected' ? 'healthy' : 'loading'">
+                WS {{ notificationSocketState }}
+              </span>
+            </div>
+            <div class="mini-item-meta">
+              <span>{{ unreadNotificationCount }} 条告警</span>
+              <span>{{ workspaceLoading ? '工作区加载中' : workspace ? '工作区已就绪' : '未打开工作区' }}</span>
+            </div>
+            <p class="mini-item-copy">风险告警会在这里优先显示，减少在长页面里来回找状态。</p>
+          </div>
+
+          <div class="mini-item">
+            <div class="mini-item-head">
+              <div class="mini-item-title">队列长度</div>
+              <span class="pill">{{ dashboard?.waitingRegistrations ?? queue.length }}</span>
+            </div>
+            <p class="mini-item-copy">待接诊患者优先级清晰，适合门诊工作台的日常使用。</p>
+          </div>
+
+          <div class="mini-item">
+            <div class="mini-item-head">
+              <div class="mini-item-title">最近工作区</div>
+              <span class="pill">{{ formatDateTime(workspace?.registration.consultationStartTime) }}</span>
+            </div>
+            <p class="mini-item-copy">问诊、病历和处方都围绕当前工作区展开。</p>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button class="button-secondary" type="button" @click="activeDoctorPanel = 'consultation'">问诊 / 审方</button>
+          <button class="button-secondary" type="button" @click="activeDoctorPanel = 'history'">历史记录</button>
+          <button class="button-ghost" type="button" @click="activeDoctorPanel = 'schedule'">排班</button>
+        </div>
+      </section>
+
+      <div class="metric-grid" v-show="activeDoctorPanel === 'overview'">
         <article class="metric">
           <div class="card-head">
             <h3>待接诊</h3>
@@ -825,6 +909,7 @@ onBeforeUnmount(() => {
     </div>
 
     <DashboardCharts
+      v-show="activeDoctorPanel === 'overview'"
       :overview="dashboard"
       :trends="dashboardTrends"
       :ai-usage="aiUsage"
@@ -833,9 +918,13 @@ onBeforeUnmount(() => {
       :triage-accuracy="triageAccuracy"
     />
 
-    <div class="detail-grid">
-      <div class="stack">
-        <section class="section">
+    <div
+      class="detail-grid workspace-grid"
+      :class="{ 'workspace-grid-single': activeDoctorPanel !== 'overview' }"
+      v-show="activeDoctorPanel !== 'overview'"
+    >
+      <div class="stack" v-show="activeDoctorPanel === 'consultation'">
+        <section class="section" v-show="activeDoctorPanel === 'consultation'">
           <div class="section-head">
             <div>
               <h3 class="section-title">待接诊队列</h3>
@@ -876,7 +965,7 @@ onBeforeUnmount(() => {
           <div class="empty-state" v-if="!queue.length">当前没有待接诊号源。</div>
         </section>
 
-        <section class="section">
+        <section class="section" v-show="activeDoctorPanel === 'consultation'">
           <div class="section-head">
             <div>
               <h3 class="section-title">问诊与诊断</h3>
@@ -920,7 +1009,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section class="section">
+        <section class="section" v-show="activeDoctorPanel === 'consultation'">
           <div class="section-head">
             <div>
               <h3 class="section-title">病历草稿</h3>
@@ -971,7 +1060,7 @@ onBeforeUnmount(() => {
           </label>
         </section>
 
-        <section class="section">
+        <section class="section" v-show="activeDoctorPanel === 'consultation'">
           <div class="section-head">
             <div>
               <h3 class="section-title">处方审查与提交</h3>
@@ -1073,8 +1162,8 @@ onBeforeUnmount(() => {
         </section>
       </div>
 
-      <div class="stack">
-        <section class="section">
+      <div class="stack" v-show="activeDoctorPanel === 'history' || activeDoctorPanel === 'schedule'">
+        <section class="section" v-show="activeDoctorPanel === 'history'">
           <div class="section-head">
             <div>
               <h3 class="section-title">风险告警</h3>
@@ -1112,7 +1201,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section class="section">
+        <section class="section" v-show="activeDoctorPanel === 'history'">
           <div class="section-head">
             <div>
               <h3 class="section-title">工作区摘要</h3>
@@ -1144,7 +1233,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section class="section">
+        <section class="section" v-show="activeDoctorPanel === 'history'">
           <div class="section-head">
             <div>
               <h3 class="section-title">病历与处方历史</h3>
@@ -1197,7 +1286,7 @@ onBeforeUnmount(() => {
           </ul>
         </section>
 
-        <section class="section">
+        <section class="section" v-show="activeDoctorPanel === 'schedule'">
           <div class="section-head">
             <div>
               <h3 class="section-title">排班</h3>

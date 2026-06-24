@@ -104,6 +104,16 @@ const latestRegistration = computed(() => registrations.value[0] ?? null);
 const latestTriage = computed(() => triageHistory.value[0] ?? triageResult.value);
 const activeTone = computed(() => (error.value ? 'danger' : loading.value ? 'loading' : 'healthy'));
 const displayName = computed(() => patient.value?.realName || patient.value?.username || authStore.sessionLabel);
+const patientPanels = [
+  { id: 'overview', label: '总览' },
+  { id: 'triage', label: '分诊' },
+  { id: 'registration', label: '挂号' },
+  { id: 'records', label: '病历' },
+  { id: 'profile', label: '我的' },
+  { id: 'history', label: '历史' },
+] as const;
+
+const activePatientPanel = ref<(typeof patientPanels)[number]['id']>('overview');
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) {
@@ -401,9 +411,91 @@ onMounted(() => {
 
       <p class="auth-error" v-if="error">{{ error }}</p>
 
-      <div class="detail-grid">
-        <div class="stack">
-          <section class="section">
+      <div class="segmented workspace-tabs">
+        <button
+          v-for="panel in patientPanels"
+          :key="panel.id"
+          type="button"
+          class="segment"
+          :class="{ active: activePatientPanel === panel.id }"
+          @click="activePatientPanel = panel.id"
+        >
+          <span>{{ panel.label }}</span>
+        </button>
+      </div>
+
+      <section class="section workspace-overview" v-show="activePatientPanel === 'overview'">
+        <div class="section-head">
+          <div>
+            <h3 class="section-title">工作台总览</h3>
+            <p class="section-copy">先看当前分诊、挂号和最近记录，再进入具体模块操作。</p>
+          </div>
+          <button class="button-secondary" type="button" @click="activePatientPanel = 'triage'">
+            <ScanSearch :size="16" />
+            <span>进入分诊</span>
+          </button>
+        </div>
+
+        <div class="detail-grid two">
+          <div class="mini-item">
+            <div class="mini-item-head">
+              <div class="mini-item-title">当前分诊</div>
+              <span class="pill" :data-tone="triageResult ? 'healthy' : 'loading'">
+                {{ triageResult ? '已生成' : '待分诊' }}
+              </span>
+            </div>
+            <div class="mini-item-meta">
+              <span>{{ triageResult?.recommendedDept || '等待输入主诉' }}</span>
+              <span>{{ triageResult?.recommendedDoctors.length ?? 0 }} 位医生</span>
+            </div>
+            <p class="mini-item-copy">{{ triageResult?.reason || '输入症状后会给出科室与医生建议' }}</p>
+          </div>
+
+          <div class="mini-item">
+            <div class="mini-item-head">
+              <div class="mini-item-title">当前挂号</div>
+              <span class="pill">{{ latestRegistration?.status || 'NONE' }}</span>
+            </div>
+            <div class="mini-item-meta">
+              <span>{{ latestRegistration?.departmentName || '暂无挂号' }}</span>
+              <span>{{ latestRegistration?.doctorName || '暂无挂号' }}</span>
+            </div>
+            <p class="mini-item-copy">
+              {{ latestRegistration ? `${formatDate(latestRegistration.workDate)} ${latestRegistration.period || ''}` : '完成分诊后即可直接挂号' }}
+            </p>
+          </div>
+
+          <div class="mini-item">
+            <div class="mini-item-head">
+              <div class="mini-item-title">待处理挂号</div>
+              <span class="pill" data-tone="loading">{{ waitingRegistrations.length }}</span>
+            </div>
+            <p class="mini-item-copy">未就诊的挂号可直接取消，方便重新选择号源。</p>
+          </div>
+
+          <div class="mini-item">
+            <div class="mini-item-head">
+              <div class="mini-item-title">最近更新时间</div>
+              <span class="pill">{{ formatDateTime(registrations[0]?.registrationTime) }}</span>
+            </div>
+            <p class="mini-item-copy">患者资料、挂号和反馈会在这里保持同步。</p>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button class="button-secondary" type="button" @click="activePatientPanel = 'triage'">去分诊</button>
+          <button class="button-secondary" type="button" @click="activePatientPanel = 'registration'">去挂号</button>
+          <button class="button-secondary" type="button" @click="activePatientPanel = 'records'">看病历</button>
+          <button class="button-ghost" type="button" @click="activePatientPanel = 'history'">看历史</button>
+        </div>
+      </section>
+
+      <div
+        class="detail-grid workspace-grid workspace-grid-single"
+        v-show="activePatientPanel !== 'overview' && activePatientPanel !== 'history'"
+      >
+        <div class="stack" v-show="activePatientPanel === 'triage' || activePatientPanel === 'registration' || activePatientPanel === 'records'">
+          <section class="section" v-show="activePatientPanel === 'triage'">
             <div class="section-head">
               <div>
                 <h3 class="section-title">智能分诊</h3>
@@ -447,7 +539,7 @@ onMounted(() => {
             </div>
           </section>
 
-          <section class="section">
+          <section class="section" v-show="activePatientPanel === 'registration'">
             <div class="section-head">
               <div>
                 <h3 class="section-title">挂号与排班</h3>
@@ -523,7 +615,7 @@ onMounted(() => {
             </div>
           </section>
 
-          <section class="section">
+          <section class="section" v-show="activePatientPanel === 'records'">
             <div class="section-head">
               <div>
                 <h3 class="section-title">病历与处方</h3>
@@ -573,7 +665,7 @@ onMounted(() => {
           </section>
         </div>
 
-        <div class="stack">
+        <div class="stack" v-show="activePatientPanel === 'profile'">
           <section class="section">
             <div class="section-head">
               <div>
@@ -727,7 +819,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="detail-grid two">
+      <div class="detail-grid two" v-show="activePatientPanel === 'history'">
         <section class="section">
           <div class="section-head">
             <div>

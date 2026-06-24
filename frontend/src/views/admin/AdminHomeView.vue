@@ -215,6 +215,15 @@ const visibleSchedules = computed(() =>
       (doctorFilter.value === null || item.doctorId === doctorFilter.value);
   }),
 );
+const adminPanels = [
+  { id: 'overview', label: '总览' },
+  { id: 'master', label: '基础资料' },
+  { id: 'resources', label: '排班 / 药品' },
+  { id: 'config', label: '规则配置' },
+  { id: 'audit', label: '审计记录' },
+] as const;
+
+const activeAdminPanel = ref<(typeof adminPanels)[number]['id']>('overview');
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) {
@@ -792,7 +801,74 @@ onBeforeUnmount(() => {
 
       <p class="auth-error" v-if="error">{{ error }}</p>
 
-      <div class="metric-grid">
+      <div class="segmented workspace-tabs">
+        <button
+          v-for="panel in adminPanels"
+          :key="panel.id"
+          type="button"
+          class="segment"
+          :class="{ active: activeAdminPanel === panel.id }"
+          @click="activeAdminPanel = panel.id"
+        >
+          <span>{{ panel.label }}</span>
+        </button>
+      </div>
+
+      <section class="section workspace-overview" v-show="activeAdminPanel === 'overview'">
+        <div class="section-head">
+          <div>
+            <h3 class="section-title">后台总览</h3>
+            <p class="section-copy">先看今日挂号、待接诊、AI 调用和高风险审方，再进入具体维护页。</p>
+          </div>
+          <button class="button-secondary" type="button" @click="activeAdminPanel = 'master'">
+            <CirclePlus :size="16" />
+            <span>维护资料</span>
+          </button>
+        </div>
+
+        <div class="detail-grid two">
+          <div class="mini-item">
+            <div class="mini-item-head">
+              <div class="mini-item-title">今日挂号</div>
+              <span class="pill">{{ dashboard?.todayRegistrations ?? 0 }}</span>
+            </div>
+            <p class="mini-item-copy">今天的门诊挂号量，适合作为后台首页主指标。</p>
+          </div>
+
+          <div class="mini-item">
+            <div class="mini-item-head">
+              <div class="mini-item-title">待接诊</div>
+              <span class="pill" data-tone="loading">{{ dashboard?.waitingRegistrations ?? 0 }}</span>
+            </div>
+            <p class="mini-item-copy">未进入接诊的挂号排队状态。</p>
+          </div>
+
+          <div class="mini-item">
+            <div class="mini-item-head">
+              <div class="mini-item-title">AI 调用</div>
+              <span class="pill">{{ dashboard?.aiCallRecords ?? 0 }}</span>
+            </div>
+            <p class="mini-item-copy">分诊、病历和审方的 AI 相关调用总量。</p>
+          </div>
+
+          <div class="mini-item">
+            <div class="mini-item-head">
+              <div class="mini-item-title">高风险审方</div>
+              <span class="pill" :data-tone="dashboard?.highRiskReviews ? 'danger' : 'healthy'">{{ dashboard?.highRiskReviews ?? 0 }}</span>
+            </div>
+            <p class="mini-item-copy">这里最适合优先盯住用药风险。</p>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button class="button-secondary" type="button" @click="activeAdminPanel = 'master'">基础资料</button>
+          <button class="button-secondary" type="button" @click="activeAdminPanel = 'resources'">排班 / 药品</button>
+          <button class="button-secondary" type="button" @click="activeAdminPanel = 'config'">规则 / 配置</button>
+          <button class="button-ghost" type="button" @click="activeAdminPanel = 'audit'">审计记录</button>
+        </div>
+      </section>
+
+      <div class="metric-grid" v-show="activeAdminPanel === 'overview'">
         <article class="metric">
           <div class="card-head"><h3>今日挂号</h3><ClipboardList :size="18" /></div>
           <div class="metric-value">{{ dashboard?.todayRegistrations ?? 0 }}</div>
@@ -817,6 +893,7 @@ onBeforeUnmount(() => {
     </div>
 
     <DashboardCharts
+      v-show="activeAdminPanel === 'overview'"
       :overview="dashboard"
       :trends="dashboardTrends"
       :ai-usage="aiUsage"
@@ -825,9 +902,13 @@ onBeforeUnmount(() => {
       :triage-accuracy="triageAccuracy"
     />
 
-    <div class="detail-grid">
-      <div class="stack">
-        <section class="section">
+    <div
+      class="detail-grid workspace-grid"
+      :class="{ 'workspace-grid-single': activeAdminPanel === 'audit' }"
+      v-show="activeAdminPanel !== 'overview'"
+    >
+      <div class="stack" v-show="activeAdminPanel === 'master' || activeAdminPanel === 'resources' || activeAdminPanel === 'config'">
+        <section class="section" v-show="activeAdminPanel === 'master'">
           <div class="section-head">
             <div>
               <h3 class="section-title">基础数据</h3>
@@ -866,7 +947,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section class="section">
+        <section class="section" v-show="activeAdminPanel === 'master'">
           <div class="section-head">
             <div>
               <h3 class="section-title">风险告警</h3>
@@ -904,7 +985,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section class="section">
+        <section class="section" v-show="activeAdminPanel === 'resources'">
           <div class="section-head">
             <div>
               <h3 class="section-title">排班 / 药品</h3>
@@ -947,7 +1028,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section class="section">
+        <section class="section" v-show="activeAdminPanel === 'config'">
           <div class="section-head">
             <div>
               <h3 class="section-title">规则 / 配置 / 模板</h3>
@@ -1003,8 +1084,8 @@ onBeforeUnmount(() => {
         </section>
       </div>
 
-      <div class="stack">
-        <section class="section">
+      <div class="stack" v-show="activeAdminPanel === 'master' || activeAdminPanel === 'resources' || activeAdminPanel === 'config' || activeAdminPanel === 'audit'">
+        <section class="section" v-show="activeAdminPanel === 'master' || activeAdminPanel === 'resources' || activeAdminPanel === 'config'">
           <div class="section-head">
             <div>
               <h3 class="section-title">编辑面板</h3>
@@ -1135,7 +1216,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section class="section">
+        <section class="section" v-show="activeAdminPanel === 'audit'">
           <div class="section-head">
             <div>
               <h3 class="section-title">最近记录</h3>
@@ -1172,7 +1253,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section class="section">
+        <section class="section" v-show="activeAdminPanel === 'audit'">
           <div class="section-head">
             <div>
               <h3 class="section-title">当前上下文</h3>
