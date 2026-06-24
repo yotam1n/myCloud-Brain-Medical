@@ -349,6 +349,91 @@ public final class WorkflowDtos {
         }
     }
 
+    public record DashboardTrendPoint(
+            LocalDate date,
+            long registrations,
+            long visits,
+            long prescriptions,
+            long aiCalls
+    ) {
+    }
+
+    public record AiUsageBucket(
+            String taskType,
+            long calls,
+            long successCalls,
+            long failedCalls,
+            long degradedCalls,
+            double usageRate,
+            long averageDurationMs
+    ) {
+    }
+
+    public record AiUsageStats(
+            long totalCalls,
+            long successCalls,
+            long failedCalls,
+            long degradedCalls,
+            double successRate,
+            long averageDurationMs,
+            List<AiUsageBucket> buckets,
+            Instant updatedAt
+    ) {
+    }
+
+    public record PrescriptionReviewRate(
+            long totalReviews,
+            long lowRiskReviews,
+            long mediumRiskReviews,
+            long highRiskReviews,
+            long manualRequiredReviews,
+            long unknownReviews,
+            double passRate,
+            Instant updatedAt
+    ) {
+    }
+
+    public record RiskDistributionBucket(
+            String riskLevel,
+            long count,
+            double ratio
+    ) {
+    }
+
+    public record RiskDistribution(
+            long totalReviews,
+            List<RiskDistributionBucket> buckets,
+            Instant updatedAt
+    ) {
+    }
+
+    public record TriageAccuracyStats(
+            long feedbackCount,
+            long accurateCount,
+            long inaccurateCount,
+            long noFeedbackCount,
+            double accuracyRate,
+            long sampleCount,
+            Instant updatedAt
+    ) {
+    }
+
+    public record AiStreamSessionCreateRequest(
+            @NotBlank @Size(max = 32) String taskType,
+            @NotNull Long registrationId,
+            @NotBlank @Size(max = 4000) String conversationText,
+            @Size(max = 1000) String diagnosisDirection
+    ) {
+    }
+
+    public record AiStreamSessionCreateResponse(
+            String sessionId,
+            String streamToken,
+            String taskType,
+            Instant expiresAt
+    ) {
+    }
+
     public record ConsultationWorkspace(
             RegistrationSummary registration,
             MedicalRecordSummary latestMedicalRecord,

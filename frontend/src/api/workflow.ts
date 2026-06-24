@@ -257,6 +257,93 @@ export type DashboardOverview = {
   updatedAt: string | null;
 };
 
+export type DashboardTrendPoint = {
+  date: string;
+  registrations: number;
+  visits: number;
+  prescriptions: number;
+  aiCalls: number;
+};
+
+export type AiUsageBucket = {
+  taskType: string;
+  calls: number;
+  successCalls: number;
+  failedCalls: number;
+  degradedCalls: number;
+  usageRate: number;
+  averageDurationMs: number;
+};
+
+export type AiUsageStats = {
+  totalCalls: number;
+  successCalls: number;
+  failedCalls: number;
+  degradedCalls: number;
+  successRate: number;
+  averageDurationMs: number;
+  buckets: AiUsageBucket[];
+  updatedAt: string | null;
+};
+
+export type PrescriptionReviewRate = {
+  totalReviews: number;
+  lowRiskReviews: number;
+  mediumRiskReviews: number;
+  highRiskReviews: number;
+  manualRequiredReviews: number;
+  unknownReviews: number;
+  passRate: number;
+  updatedAt: string | null;
+};
+
+export type RiskDistributionBucket = {
+  riskLevel: string;
+  count: number;
+  ratio: number;
+};
+
+export type RiskDistribution = {
+  totalReviews: number;
+  buckets: RiskDistributionBucket[];
+  updatedAt: string | null;
+};
+
+export type TriageAccuracyStats = {
+  feedbackCount: number;
+  accurateCount: number;
+  inaccurateCount: number;
+  noFeedbackCount: number;
+  accuracyRate: number;
+  sampleCount: number;
+  updatedAt: string | null;
+};
+
+export type DashboardBundle = {
+  overview: DashboardOverview | null;
+  trends: DashboardTrendPoint[];
+  aiUsage: AiUsageStats | null;
+  prescriptionReviewRate: PrescriptionReviewRate | null;
+  riskDistribution: RiskDistribution | null;
+  triageAccuracy: TriageAccuracyStats | null;
+};
+
+export type AiStreamTaskType = 'MEDICAL_RECORD' | 'DIAGNOSIS';
+
+export type AiStreamSessionCreateRequest = {
+  taskType: AiStreamTaskType;
+  registrationId: number;
+  conversationText: string;
+  diagnosisDirection?: string | null;
+};
+
+export type AiStreamSessionCreateResponse = {
+  sessionId: string;
+  streamToken: string;
+  taskType: AiStreamTaskType;
+  expiresAt: string;
+};
+
 export type AiConfigSummary = {
   id: number;
   provider: string;
@@ -649,6 +736,34 @@ export async function listFeedback() {
 
 export async function getDashboardOverview() {
   return unwrap((await http.get<Result<DashboardOverview>>('/dashboard/overview')).data);
+}
+
+export async function getDashboardTrends(startDate?: string, endDate?: string) {
+  return unwrap((await http.get<Result<DashboardTrendPoint[]>>('/dashboard/trends', { params: { startDate, endDate } })).data);
+}
+
+export async function getDashboardAiUsage(taskType?: string) {
+  return unwrap((await http.get<Result<AiUsageStats>>('/dashboard/ai-usage', { params: { taskType } })).data);
+}
+
+export async function getDashboardPrescriptionReviewRate() {
+  return unwrap((await http.get<Result<PrescriptionReviewRate>>('/dashboard/prescription-review-rate')).data);
+}
+
+export async function getDashboardRiskDistribution() {
+  return unwrap((await http.get<Result<RiskDistribution>>('/dashboard/risk-distribution')).data);
+}
+
+export async function getDashboardTriageAccuracy() {
+  return unwrap((await http.get<Result<TriageAccuracyStats>>('/dashboard/triage-accuracy')).data);
+}
+
+export async function createAiStreamSession(payload: AiStreamSessionCreateRequest) {
+  return unwrap((await http.post<Result<AiStreamSessionCreateResponse>>('/ai-stream-sessions', payload)).data);
+}
+
+export async function cancelAiStreamSession(sessionId: string) {
+  await http.delete<Result<null>>(`/ai-stream-sessions/${sessionId}`);
 }
 
 export async function listAiConfig() {

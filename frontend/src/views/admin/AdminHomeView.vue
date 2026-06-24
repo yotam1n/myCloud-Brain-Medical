@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import {
   Activity,
   ArrowDownUp,
@@ -38,7 +38,12 @@ import {
   adminUpdatePromptTemplate,
   adminUpdatePrescriptionRule,
   adminUpdateSchedule,
+  getDashboardAiUsage,
   getDashboardOverview,
+  getDashboardPrescriptionReviewRate,
+  getDashboardRiskDistribution,
+  getDashboardTrends,
+  getDashboardTriageAccuracy,
   listAiCallRecords,
   listAiConfig,
   listAllSchedules,
@@ -48,13 +53,16 @@ import {
   listPromptTemplates,
   markNotificationRead,
 } from '@/api/workflow';
+import DashboardCharts from '@/components/DashboardCharts.vue';
 import { useAuthStore } from '@/stores/auth';
 import type {
   AiCallRecordSummary,
   AiConfigSummary,
   AiConfigWriteRequest,
+  AiUsageStats,
   AuditLogSummary,
   DashboardOverview,
+  DashboardTrendPoint,
   DepartmentOption,
   DepartmentWriteRequest,
   DoctorOption,
@@ -62,12 +70,15 @@ import type {
   DrugOption,
   DrugWriteRequest,
   NotificationRecordSummary,
+  PrescriptionReviewRate,
   PrescriptionRuleSummary,
   PrescriptionRuleWriteRequest,
   PromptTemplateSummary,
   PromptTemplateWriteRequest,
+  RiskDistribution,
   ScheduleOption,
   ScheduleWriteRequest,
+  TriageAccuracyStats,
 } from '@/api/workflow';
 import { resolveUiErrorMessage } from '@/utils/zh';
 
@@ -79,6 +90,11 @@ const loading = ref(false);
 const saving = ref(false);
 const error = ref('');
 const dashboard = ref<DashboardOverview | null>(null);
+const dashboardTrends = ref<DashboardTrendPoint[]>([]);
+const aiUsage = ref<AiUsageStats | null>(null);
+const prescriptionReviewRate = ref<PrescriptionReviewRate | null>(null);
+const riskDistribution = ref<RiskDistribution | null>(null);
+const triageAccuracy = ref<TriageAccuracyStats | null>(null);
 const departments = ref<DepartmentOption[]>([]);
 const doctors = ref<DoctorOption[]>([]);
 const schedules = ref<ScheduleOption[]>([]);
@@ -96,6 +112,8 @@ const currentKind = ref<ResourceKind>('department');
 const currentId = ref<number | null>(null);
 const notificationLoading = ref(false);
 const ackingNotificationId = ref<number | null>(null);
+const notificationSocketState = ref<'idle' | 'connecting' | 'connected' | 'closed'>('idle');
+let notificationSocket: WebSocket | null = null;
 
 const departmentForm = reactive<DepartmentWriteRequest>({
   code: '',
@@ -215,6 +233,11 @@ function truncate(value: string | null | undefined, length = 80) {
   }
   const compact = value.replace(/\s+/g, ' ').trim();
   return compact.length > length ? `${compact.slice(0, length)}...` : compact;
+}
+
+function buildWsUrl(path: string, token: string) {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}${path}?token=${encodeURIComponent(token)}`;
 }
 
 function riskTone(level: string | null | undefined) {
@@ -386,12 +409,29 @@ function ensureDefaults() {
   }
 }
 
+async function loadDashboardBundle() {
+  const [overviewData, trendData, aiUsageData, reviewRateData, riskData, triageData] = await Promise.all([
+    getDashboardOverview(),
+    getDashboardTrends(),
+    getDashboardAiUsage(),
+    getDashboardPrescriptionReviewRate(),
+    getDashboardRiskDistribution(),
+    getDashboardTriageAccuracy(),
+  ]);
+  dashboard.value = overviewData;
+  dashboardTrends.value = trendData;
+  aiUsage.value = aiUsageData;
+  prescriptionReviewRate.value = reviewRateData;
+  riskDistribution.value = riskData;
+  triageAccuracy.value = triageData;
+}
+
 async function loadAll() {
   loading.value = true;
   error.value = '';
   try {
     const [
-      dashboardData,
+      ,
       departmentData,
       doctorData,
       scheduleData,
@@ -403,7 +443,7 @@ async function loadAll() {
       auditData,
       notificationData,
     ] = await Promise.all([
-      getDashboardOverview(),
+      loadDashboardBundle(),
       adminListDepartments(),
       adminListDoctors(departmentFilter.value),
       listAllSchedules(departmentFilter.value, doctorFilter.value),
@@ -416,7 +456,6 @@ async function loadAll() {
       listUnreadNotifications(),
     ]);
 
-    dashboard.value = dashboardData;
     departments.value = departmentData;
     doctors.value = doctorData;
     schedules.value = scheduleData;
@@ -444,6 +483,47 @@ async function loadNotifications() {
   } finally {
     notificationLoading.value = false;
   }
+}
+
+function upsertNotification(notification: NotificationRecordSummary) {
+  notifications.value = [
+    notification,
+    ...notifications.value.filter((item) => item.id !== notification.id),
+  ].slice(0, 30);
+}
+
+function connectNotificationSocket() {
+  if (!authStore.token || notificationSocket) {
+    return;
+  }
+  notificationSocketState.value = 'connecting';
+  notificationSocket = new WebSocket(buildWsUrl('/ws/notifications', authStore.token));
+  notificationSocket.onopen = () => {
+    notificationSocketState.value = 'connected';
+  };
+  notificationSocket.onmessage = (event) => {
+    try {
+      const message = JSON.parse(event.data) as { type?: string; payload?: NotificationRecordSummary };
+      if (message.type === 'notification' && message.payload) {
+        upsertNotification(message.payload);
+        void loadDashboardBundle();
+      }
+    } catch {
+      // ignore malformed realtime messages
+    }
+  };
+  notificationSocket.onclose = () => {
+    notificationSocket = null;
+    notificationSocketState.value = 'closed';
+  };
+  notificationSocket.onerror = () => {
+    notificationSocketState.value = 'closed';
+  };
+}
+
+function closeNotificationSocket() {
+  notificationSocket?.close();
+  notificationSocket = null;
 }
 
 async function ackNotification(id: number) {
@@ -618,6 +698,11 @@ watch([departments, doctors], () => {
 
 onMounted(() => {
   void loadAll();
+  connectNotificationSocket();
+});
+
+onBeforeUnmount(() => {
+  closeNotificationSocket();
 });
 </script>
 
@@ -636,6 +721,10 @@ onMounted(() => {
       </div>
 
       <div class="toolbar">
+        <span class="pill" :data-tone="notificationSocketState === 'connected' ? 'healthy' : 'loading'">
+          <BellRing :size="14" />
+          <span>WS {{ notificationSocketState }}</span>
+        </span>
         <button class="button-ghost" type="button" @click="loadAll" :disabled="loading">
           <RefreshCw :size="16" :class="{ spinning: loading }" />
           <span>刷新</span>
@@ -726,6 +815,15 @@ onMounted(() => {
         </article>
       </div>
     </div>
+
+    <DashboardCharts
+      :overview="dashboard"
+      :trends="dashboardTrends"
+      :ai-usage="aiUsage"
+      :prescription-review-rate="prescriptionReviewRate"
+      :risk-distribution="riskDistribution"
+      :triage-accuracy="triageAccuracy"
+    />
 
     <div class="detail-grid">
       <div class="stack">

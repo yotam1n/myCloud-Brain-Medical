@@ -1,9 +1,11 @@
 package com.cloudbrain.application.workflow;
 
 import com.cloudbrain.common.exception.ApiException;
-import com.cloudbrain.dto.workflow.WorkflowDtos.AiCallRecordSummary;
+import com.cloudbrain.dto.workflow.WorkflowDtos.AiUsageBucket;
+import com.cloudbrain.dto.workflow.WorkflowDtos.AiUsageStats;
 import com.cloudbrain.dto.workflow.WorkflowDtos.ConsultationWorkspace;
 import com.cloudbrain.dto.workflow.WorkflowDtos.DashboardOverview;
+import com.cloudbrain.dto.workflow.WorkflowDtos.DashboardTrendPoint;
 import com.cloudbrain.dto.workflow.WorkflowDtos.DepartmentOption;
 import com.cloudbrain.dto.workflow.WorkflowDtos.DiagnosisSuggestionRequest;
 import com.cloudbrain.dto.workflow.WorkflowDtos.DiagnosisSuggestionResponse;
@@ -22,10 +24,14 @@ import com.cloudbrain.dto.workflow.WorkflowDtos.PrescriptionReviewRequest;
 import com.cloudbrain.dto.workflow.WorkflowDtos.PrescriptionReviewResponse;
 import com.cloudbrain.dto.workflow.WorkflowDtos.PrescriptionSubmitRequest;
 import com.cloudbrain.dto.workflow.WorkflowDtos.PrescriptionSummary;
+import com.cloudbrain.dto.workflow.WorkflowDtos.PrescriptionReviewRate;
 import com.cloudbrain.dto.workflow.WorkflowDtos.RegistrationCancelRequest;
 import com.cloudbrain.dto.workflow.WorkflowDtos.RegistrationCreateRequest;
 import com.cloudbrain.dto.workflow.WorkflowDtos.RegistrationSummary;
+import com.cloudbrain.dto.workflow.WorkflowDtos.RiskDistribution;
+import com.cloudbrain.dto.workflow.WorkflowDtos.RiskDistributionBucket;
 import com.cloudbrain.dto.workflow.WorkflowDtos.ScheduleOption;
+import com.cloudbrain.dto.workflow.WorkflowDtos.TriageAccuracyStats;
 import com.cloudbrain.dto.workflow.WorkflowDtos.TriageRequest;
 import com.cloudbrain.dto.workflow.WorkflowDtos.TriageResponse;
 import com.cloudbrain.entity.auth.DoctorEntity;
@@ -76,6 +82,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -127,6 +134,7 @@ public class WorkflowService {
     private final FeedbackJpaRepository feedbackRepository;
     private final TriageAccuracyFeedbackJpaRepository triageAccuracyFeedbackRepository;
     private final AICallRecordJpaRepository aiCallRecordRepository;
+    private final NotificationWebSocketHandler notificationWebSocketHandler;
 
     public WorkflowService(DepartmentJpaRepository departmentRepository,
                            DoctorJpaRepository doctorRepository,
@@ -147,7 +155,8 @@ public class WorkflowService {
                            NotificationRecordJpaRepository notificationRecordRepository,
                            FeedbackJpaRepository feedbackRepository,
                            TriageAccuracyFeedbackJpaRepository triageAccuracyFeedbackRepository,
-                           AICallRecordJpaRepository aiCallRecordRepository) {
+                           AICallRecordJpaRepository aiCallRecordRepository,
+                           NotificationWebSocketHandler notificationWebSocketHandler) {
         this.departmentRepository = departmentRepository;
         this.doctorRepository = doctorRepository;
         this.patientRepository = patientRepository;
@@ -168,6 +177,7 @@ public class WorkflowService {
         this.feedbackRepository = feedbackRepository;
         this.triageAccuracyFeedbackRepository = triageAccuracyFeedbackRepository;
         this.aiCallRecordRepository = aiCallRecordRepository;
+        this.notificationWebSocketHandler = notificationWebSocketHandler;
     }
 
     @Transactional(readOnly = true)
@@ -610,6 +620,7 @@ public class WorkflowService {
     public DiagnosisSuggestionResponse suggestDiagnosis(ActorContext actorContext, DiagnosisSuggestionRequest request) {
         Long doctorId = requireDoctor(actorContext);
         RegistrationEntity registration = requireDoctorRegistration(request.registrationId(), doctorId);
+        long started = System.currentTimeMillis();
         String diagnosis = inferDiagnosis(request.conversationText());
         DiagnosisSuggestionRecordEntity entity = new DiagnosisSuggestionRecordEntity();
         entity.setRegistrationId(registration.getId());
@@ -619,6 +630,18 @@ public class WorkflowService {
         entity.setSuggestedExamItems(suggestExamItems(diagnosis));
         entity.setAdoptionStatus("SUGGESTED");
         entity.setFinalDiagnosisDirection(diagnosis);
+        entity = diagnosisSuggestionRepository.save(entity);
+
+        AICallRecordEntity callRecord = aiCallRecord(
+                "DIAGNOSIS",
+                actorContext,
+                request.conversationText(),
+                entity.getSuggestedDiagnoses(),
+                started
+        );
+        callRecord.setBusinessRecordId(entity.getId());
+        callRecord = aiCallRecordRepository.save(callRecord);
+        entity.setAiCallRecordId(callRecord.getId());
         entity = diagnosisSuggestionRepository.save(entity);
         return new DiagnosisSuggestionResponse(
                 entity.getId(),
@@ -637,12 +660,21 @@ public class WorkflowService {
         if (!List.of(MEDICAL_RECORD_SAVED, PRESCRIPTION_REVIEWED, PRESCRIPTION_SUBMITTED).contains(registration.getStatus())) {
             throw conflict("please save medical record before prescription review");
         }
+        long started = System.currentTimeMillis();
 
         List<DrugEntity> drugs = request.items().stream()
                 .map(item -> drugRepository.findByIdAndStatus(item.drugId(), ACTIVE)
                         .orElseThrow(() -> notFound("drug not found: " + item.drugId())))
                 .toList();
         ReviewComputation review = computeReview(registration, request.items(), drugs);
+        AICallRecordEntity callRecord = aiCallRecord(
+                "PRESCRIPTION_REVIEW",
+                actorContext,
+                drugs.stream().map(DrugEntity::getName).collect(Collectors.joining(", ")),
+                review.summary(),
+                started
+        );
+        callRecord = aiCallRecordRepository.save(callRecord);
 
         PrescriptionReviewEntity entity = new PrescriptionReviewEntity();
         entity.setRegistrationId(registration.getId());
@@ -655,11 +687,14 @@ public class WorkflowService {
         entity.setLlmSuggestion(review.suggestion());
         entity.setLlmSummary(review.summary());
         entity.setLlmCallStatus("LOCAL_SIMULATED");
+        entity.setAiCallRecordId(callRecord.getId());
         entity.setPrescriptionSnapshotHash(hashItems(request.items()));
         entity.setReviewContextHash(hashContext(registration));
         entity.setBindStatus("UNBOUND");
         entity.setVersion(0);
         entity = prescriptionReviewRepository.save(entity);
+        callRecord.setBusinessRecordId(entity.getId());
+        aiCallRecordRepository.save(callRecord);
 
         upsertPrescriptionReviewNotification(registration, entity);
 
@@ -770,6 +805,7 @@ public class WorkflowService {
         }
         Optional<FeedbackEntity> existing = feedbackRepository.findByRegistrationId(registration.getId());
         if (existing.isPresent()) {
+            ensureTriageAccuracyFeedback(existing.get(), registration);
             return toFeedbackResponse(existing.get());
         }
         FeedbackEntity feedback = new FeedbackEntity();
@@ -778,7 +814,9 @@ public class WorkflowService {
         feedback.setRating(request.rating());
         feedback.setTriageAccurate(request.triageAccurate());
         feedback.setComment(request.comment());
-        return toFeedbackResponse(feedbackRepository.save(feedback));
+        feedback = feedbackRepository.save(feedback);
+        ensureTriageAccuracyFeedback(feedback, registration);
+        return toFeedbackResponse(feedback);
     }
 
     @Transactional(readOnly = true)
@@ -796,9 +834,7 @@ public class WorkflowService {
         }
         LocalDateTime dayStart = LocalDate.now().atStartOfDay();
         LocalDateTime dayEnd = dayStart.plusDays(1);
-        List<RegistrationEntity> registrations = actorContext.isDoctor()
-                ? registrationRepository.findByDoctorIdOrderByRegistrationTimeDesc(actorContext.getRequiredDoctorId())
-                : registrationRepository.findAll();
+        List<RegistrationEntity> registrations = visibleRegistrations(actorContext);
         long todayRegistrations = registrations.stream()
                 .filter(registration -> !registration.getRegistrationTime().isBefore(dayStart)
                         && registration.getRegistrationTime().isBefore(dayEnd))
@@ -846,6 +882,131 @@ public class WorkflowService {
     }
 
     @Transactional(readOnly = true)
+    public List<DashboardTrendPoint> dashboardTrends(ActorContext actorContext, LocalDate startDate, LocalDate endDate) {
+        requireDashboardActor(actorContext);
+        LocalDate end = endDate == null ? LocalDate.now() : endDate;
+        LocalDate start = startDate == null ? end.minusDays(13) : startDate;
+        if (start.isAfter(end)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST.value(), "startDate must not be after endDate");
+        }
+        if (start.plusDays(60).isBefore(end)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST.value(), "date range cannot exceed 60 days");
+        }
+
+        List<RegistrationEntity> registrations = visibleRegistrations(actorContext);
+        Set<Long> registrationIds = registrations.stream().map(RegistrationEntity::getId).collect(Collectors.toSet());
+        List<PrescriptionEntity> prescriptions = prescriptionRepository.findAll().stream()
+                .filter(prescription -> registrationIds.contains(prescription.getRegistrationId()))
+                .toList();
+        List<AICallRecordEntity> aiRecords = visibleAiCallRecords(actorContext, registrations);
+
+        List<DashboardTrendPoint> points = new ArrayList<>();
+        for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
+            LocalDate current = date;
+            LocalDateTime dayStart = current.atStartOfDay();
+            LocalDateTime dayEnd = dayStart.plusDays(1);
+            long registrationCount = registrations.stream()
+                    .filter(registration -> isBetween(registration.getRegistrationTime(), dayStart, dayEnd))
+                    .count();
+            long visitCount = registrations.stream()
+                    .filter(registration -> isBetween(registration.getRegistrationTime(), dayStart, dayEnd))
+                    .filter(registration -> List.of(IN_CONSULTATION, MEDICAL_RECORD_SAVED, PRESCRIPTION_REVIEWED, PRESCRIPTION_SUBMITTED, COMPLETED)
+                            .contains(registration.getStatus()))
+                    .count();
+            long prescriptionCount = prescriptions.stream()
+                    .filter(prescription -> isSameDay(prescription.getCreatedAt(), dayStart, dayEnd))
+                    .count();
+            long aiCallCount = aiRecords.stream()
+                    .filter(record -> isSameDay(record.getCreatedAt(), dayStart, dayEnd))
+                    .count();
+            points.add(new DashboardTrendPoint(current, registrationCount, visitCount, prescriptionCount, aiCallCount));
+        }
+        return points;
+    }
+
+    @Transactional(readOnly = true)
+    public AiUsageStats dashboardAiUsage(ActorContext actorContext, String taskType) {
+        List<AICallRecordEntity> records = visibleAiCallRecords(actorContext, visibleRegistrations(actorContext));
+        String normalizedTaskType = taskType == null || taskType.isBlank() ? null : taskType.trim().toUpperCase(Locale.ROOT);
+        if (normalizedTaskType != null) {
+            records = records.stream()
+                    .filter(record -> normalizedTaskType.equalsIgnoreCase(record.getTaskType()))
+                    .toList();
+        }
+
+        long total = records.size();
+        long success = records.stream().filter(record -> "COMPLETED".equalsIgnoreCase(record.getCallStatus())).count();
+        long failed = records.stream().filter(record -> !"COMPLETED".equalsIgnoreCase(record.getCallStatus())).count();
+        long degraded = records.stream().filter(record -> Boolean.TRUE.equals(record.getDegraded())).count();
+        long averageDuration = averageDuration(records);
+        List<AiUsageBucket> buckets = records.stream()
+                .collect(Collectors.groupingBy(record -> firstNonBlank(record.getTaskType(), "UNKNOWN"), LinkedHashMap::new, Collectors.toList()))
+                .entrySet()
+                .stream()
+                .map(entry -> {
+                    List<AICallRecordEntity> bucketRecords = entry.getValue();
+                    long bucketTotal = bucketRecords.size();
+                    long bucketSuccess = bucketRecords.stream().filter(record -> "COMPLETED".equalsIgnoreCase(record.getCallStatus())).count();
+                    long bucketFailed = bucketRecords.stream().filter(record -> !"COMPLETED".equalsIgnoreCase(record.getCallStatus())).count();
+                    long bucketDegraded = bucketRecords.stream().filter(record -> Boolean.TRUE.equals(record.getDegraded())).count();
+                    return new AiUsageBucket(
+                            entry.getKey(),
+                            bucketTotal,
+                            bucketSuccess,
+                            bucketFailed,
+                            bucketDegraded,
+                            ratio(bucketTotal, total),
+                            averageDuration(bucketRecords)
+                    );
+                })
+                .toList();
+        return new AiUsageStats(total, success, failed, degraded, ratio(success, total), averageDuration, buckets, Instant.now());
+    }
+
+    @Transactional(readOnly = true)
+    public PrescriptionReviewRate dashboardPrescriptionReviewRate(ActorContext actorContext) {
+        List<PrescriptionReviewEntity> reviews = visiblePrescriptionReviews(actorContext);
+        long total = reviews.size();
+        long low = reviews.stream().filter(review -> "LOW".equalsIgnoreCase(review.getRiskLevel())).count();
+        long medium = reviews.stream().filter(review -> "MEDIUM".equalsIgnoreCase(review.getRiskLevel())).count();
+        long high = reviews.stream().filter(review -> "HIGH".equalsIgnoreCase(review.getRiskLevel())).count();
+        long manual = reviews.stream().filter(this::requiresManualReview).count();
+        long unknown = reviews.stream().filter(review -> isUnknownRisk(review.getRiskLevel())).count();
+        return new PrescriptionReviewRate(total, low, medium, high, manual, unknown, ratio(low, total), Instant.now());
+    }
+
+    @Transactional(readOnly = true)
+    public RiskDistribution dashboardRiskDistribution(ActorContext actorContext) {
+        List<PrescriptionReviewEntity> reviews = visiblePrescriptionReviews(actorContext);
+        long total = reviews.size();
+        List<RiskDistributionBucket> buckets = List.of("LOW", "MEDIUM", "HIGH", "UNKNOWN").stream()
+                .map(level -> {
+                    long count = reviews.stream()
+                            .filter(review -> "UNKNOWN".equals(level)
+                                    ? isUnknownRisk(review.getRiskLevel())
+                                    : level.equalsIgnoreCase(review.getRiskLevel()))
+                            .count();
+                    return new RiskDistributionBucket(level, count, ratio(count, total));
+                })
+                .toList();
+        return new RiskDistribution(total, buckets, Instant.now());
+    }
+
+    @Transactional(readOnly = true)
+    public TriageAccuracyStats dashboardTriageAccuracy(ActorContext actorContext) {
+        List<RegistrationEntity> registrations = visibleRegistrations(actorContext);
+        Set<Long> registrationIds = registrations.stream().map(RegistrationEntity::getId).collect(Collectors.toSet());
+        List<FeedbackEntity> feedbacks = feedbackRepository.findAll().stream()
+                .filter(feedback -> registrationIds.contains(feedback.getRegistrationId()))
+                .toList();
+        long accurate = feedbacks.stream().filter(feedback -> Boolean.TRUE.equals(feedback.getTriageAccurate())).count();
+        long inaccurate = feedbacks.stream().filter(feedback -> Boolean.FALSE.equals(feedback.getTriageAccurate())).count();
+        long sample = accurate + inaccurate;
+        long noFeedback = Math.max(0, registrations.size() - feedbacks.size());
+        return new TriageAccuracyStats(feedbacks.size(), accurate, inaccurate, noFeedback, ratio(accurate, sample), sample, Instant.now());
+    }
+
+    @Transactional(readOnly = true)
     public List<TriageResponse> listTriageRecords(ActorContext actorContext) {
         List<TriageRecordEntity> records = actorContext != null && actorContext.isPatient()
                 ? triageRecordRepository.findByPatientIdOrderByCreatedAtDesc(actorContext.getRequiredPatientId())
@@ -868,6 +1029,69 @@ public class WorkflowService {
                             record.getRecommendationSource()
                     );
                 }).toList();
+    }
+
+    private void requireDashboardActor(ActorContext actorContext) {
+        if (actorContext == null || !(actorContext.isDoctor() || actorContext.isAdmin())) {
+            throw new ApiException(HttpStatus.FORBIDDEN.value(), "dashboard permission required");
+        }
+    }
+
+    private List<RegistrationEntity> visibleRegistrations(ActorContext actorContext) {
+        requireDashboardActor(actorContext);
+        return actorContext.isDoctor()
+                ? registrationRepository.findByDoctorIdOrderByRegistrationTimeDesc(actorContext.getRequiredDoctorId())
+                : registrationRepository.findAll();
+    }
+
+    private List<PrescriptionReviewEntity> visiblePrescriptionReviews(ActorContext actorContext) {
+        requireDashboardActor(actorContext);
+        return actorContext.isDoctor()
+                ? prescriptionReviewRepository.findByDoctorIdOrderByCreatedAtDesc(actorContext.getRequiredDoctorId())
+                : prescriptionReviewRepository.findAll();
+    }
+
+    private List<AICallRecordEntity> visibleAiCallRecords(ActorContext actorContext, List<RegistrationEntity> registrations) {
+        requireDashboardActor(actorContext);
+        if (actorContext.isAdmin()) {
+            return aiCallRecordRepository.findAll();
+        }
+        Set<Long> registrationIds = registrations.stream().map(RegistrationEntity::getId).collect(Collectors.toSet());
+        Set<Long> triageRecordIds = registrations.stream()
+                .map(RegistrationEntity::getTriageRecordId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<Long> reviewIds = prescriptionReviewRepository.findByDoctorIdOrderByCreatedAtDesc(actorContext.getRequiredDoctorId()).stream()
+                .map(PrescriptionReviewEntity::getId)
+                .collect(Collectors.toSet());
+        return aiCallRecordRepository.findAll().stream()
+                .filter(record -> Objects.equals(record.getOperatorId(), actorContext.userId())
+                        || ("TRIAGE".equalsIgnoreCase(record.getTaskType()) && triageRecordIds.contains(record.getBusinessRecordId()))
+                        || ("MEDICAL_RECORD".equalsIgnoreCase(record.getTaskType()) && registrationIds.contains(record.getBusinessRecordId()))
+                        || ("PRESCRIPTION_REVIEW".equalsIgnoreCase(record.getTaskType()) && reviewIds.contains(record.getBusinessRecordId())))
+                .toList();
+    }
+
+    private void ensureTriageAccuracyFeedback(FeedbackEntity feedback, RegistrationEntity registration) {
+        if (feedback == null || registration == null) {
+            return;
+        }
+        if (triageAccuracyFeedbackRepository.findByFeedbackId(feedback.getId()).isPresent()) {
+            return;
+        }
+        TriageRecordEntity triageRecord = registration.getTriageRecordId() == null
+                ? null
+                : triageRecordRepository.findById(registration.getTriageRecordId()).orElse(null);
+        TriageAccuracyFeedbackEntity accuracy = new TriageAccuracyFeedbackEntity();
+        accuracy.setFeedbackId(feedback.getId());
+        accuracy.setRecommendedDeptSnapshot(triageRecord == null ? null : triageRecord.getRecommendedDept());
+        accuracy.setActualDeptSnapshot(firstNonBlank(registration.getDepartmentSnapshot(), null));
+        accuracy.setAccuracyLabel(feedback.getTriageAccurate() == null
+                ? "UNKNOWN"
+                : Boolean.TRUE.equals(feedback.getTriageAccurate()) ? "ACCURATE" : "INACCURATE");
+        accuracy.setReasonTags("PATIENT_FEEDBACK");
+        accuracy.setNotes(feedback.getComment());
+        triageAccuracyFeedbackRepository.save(accuracy);
     }
 
     private RegistrationEntity requireDoctorRegistration(Long registrationId, Long doctorId) {
@@ -1182,8 +1406,44 @@ public class WorkflowService {
         if (instant == null) {
             return false;
         }
-        LocalDateTime value = instant.atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
+        LocalDateTime value = instant.atZone(ZoneId.systemDefault()).toLocalDateTime();
         return !value.isBefore(dayStart) && value.isBefore(dayEnd);
+    }
+
+    private boolean isBetween(LocalDateTime value, LocalDateTime start, LocalDateTime end) {
+        return value != null && !value.isBefore(start) && value.isBefore(end);
+    }
+
+    private double ratio(long part, long total) {
+        if (total <= 0) {
+            return 0D;
+        }
+        return Math.round((part * 10000D / total)) / 100D;
+    }
+
+    private long averageDuration(List<AICallRecordEntity> records) {
+        return Math.round(records.stream()
+                .map(AICallRecordEntity::getDurationMs)
+                .filter(Objects::nonNull)
+                .mapToLong(Long::longValue)
+                .average()
+                .orElse(0D));
+    }
+
+    private boolean requiresManualReview(PrescriptionReviewEntity review) {
+        if (review == null) {
+            return false;
+        }
+        String riskLevel = firstNonBlank(review.getRiskLevel(), "UNKNOWN").toUpperCase(Locale.ROOT);
+        return "MEDIUM".equals(riskLevel)
+                || "HIGH".equals(riskLevel)
+                || !firstNonBlank(review.getManualConfirmation(), "").isBlank()
+                || !firstNonBlank(review.getContextMissingItems(), "").isBlank()
+                || "CONTEXT_MISSING".equalsIgnoreCase(firstNonBlank(review.getRuleEngineStatus(), ""));
+    }
+
+    private boolean isUnknownRisk(String riskLevel) {
+        return riskLevel == null || riskLevel.isBlank() || "UNKNOWN".equalsIgnoreCase(riskLevel);
     }
 
     private boolean containsNormalized(String source, String keyword) {
@@ -1227,7 +1487,8 @@ public class WorkflowService {
         notification.setPatientSummary(buildPatientSummary(registration));
         notification.setRiskSummary(buildRiskSummary(review));
         notification.setRead(false);
-        notificationRecordRepository.save(notification);
+        notification = notificationRecordRepository.save(notification);
+        notificationWebSocketHandler.publish(toNotificationRecordSummary(notification));
     }
 
     private String determineNotificationAlertType(PrescriptionReviewEntity review) {

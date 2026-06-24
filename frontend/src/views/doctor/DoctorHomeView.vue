@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import {
   Activity,
   CheckCircle2,
@@ -19,10 +19,17 @@ import {
 
 import {
   beginConsultation,
+  cancelAiStreamSession,
   completeConsultation,
+  createAiStreamSession,
   diagnose,
   generateMedicalRecord,
+  getDashboardAiUsage,
   getDashboardOverview,
+  getDashboardPrescriptionReviewRate,
+  getDashboardRiskDistribution,
+  getDashboardTrends,
+  getDashboardTriageAccuracy,
   getDoctor,
   getWorkspace,
   listUnreadNotifications,
@@ -36,19 +43,25 @@ import {
   searchDrugs,
   submitPrescription,
 } from '@/api/workflow';
+import DashboardCharts from '@/components/DashboardCharts.vue';
 import { useAuthStore } from '@/stores/auth';
 import type {
+  AiUsageStats,
   ConsultationWorkspace,
   DashboardOverview,
+  DashboardTrendPoint,
   DiagnosisSuggestionResponse,
   DoctorOption,
   DrugOption,
   MedicalRecordSummary,
   NotificationRecordSummary,
+  PrescriptionReviewRate,
   PrescriptionReviewResponse,
   PrescriptionSummary,
   RegistrationSummary,
+  RiskDistribution,
   ScheduleOption,
+  TriageAccuracyStats,
 } from '@/api/workflow';
 import { resolveUiErrorMessage } from '@/utils/zh';
 
@@ -69,6 +82,11 @@ const workspaceLoading = ref(false);
 const error = ref('');
 const doctor = ref<DoctorOption | null>(null);
 const dashboard = ref<DashboardOverview | null>(null);
+const dashboardTrends = ref<DashboardTrendPoint[]>([]);
+const aiUsage = ref<AiUsageStats | null>(null);
+const prescriptionReviewRate = ref<PrescriptionReviewRate | null>(null);
+const riskDistribution = ref<RiskDistribution | null>(null);
+const triageAccuracy = ref<TriageAccuracyStats | null>(null);
 const queue = ref<RegistrationSummary[]>([]);
 const schedules = ref<ScheduleOption[]>([]);
 const workspace = ref<ConsultationWorkspace | null>(null);
@@ -91,6 +109,10 @@ const startingConsultation = ref(false);
 const completingConsultation = ref(false);
 const notificationLoading = ref(false);
 const ackingNotificationId = ref<number | null>(null);
+const notificationSocketState = ref<'idle' | 'connecting' | 'connected' | 'closed'>('idle');
+const streamText = ref('');
+const activeStreamSessionId = ref<string | null>(null);
+let notificationSocket: WebSocket | null = null;
 
 const consultationForm = reactive({
   conversationText: '',
@@ -172,6 +194,11 @@ function truncate(value: string | null | undefined, length = 80) {
   return compact.length > length ? `${compact.slice(0, length)}...` : compact;
 }
 
+function buildWsUrl(path: string, token: string) {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}${path}?token=${encodeURIComponent(token)}`;
+}
+
 function riskTone(level: string | null | undefined) {
   const normalized = (level || '').toUpperCase();
   if (normalized === 'HIGH' || normalized === 'DANGER' || normalized === 'CRITICAL') {
@@ -194,6 +221,25 @@ function emptyRecordForm() {
     docNote: '',
     aiGenerated: true,
   };
+}
+
+function applyMedicalRecordDraft(draft: MedicalRecordSummary) {
+  Object.assign(recordForm, {
+    chiefComplaint: draft.chiefComplaint || recordForm.chiefComplaint,
+    presentIllness: draft.presentIllness || consultationForm.conversationText,
+    pastHistory: draft.pastHistory || recordForm.pastHistory,
+    physicalExam: draft.physicalExam || recordForm.physicalExam,
+    preliminaryDiagnosis: draft.preliminaryDiagnosis || recordForm.preliminaryDiagnosis,
+    treatmentPlan: draft.treatmentPlan || recordForm.treatmentPlan,
+    docNote: draft.docNote || recordForm.docNote,
+    aiGenerated: draft.aiGenerated ?? true,
+  });
+  consultationForm.diagnosisDirection = draft.preliminaryDiagnosis || consultationForm.diagnosisDirection;
+}
+
+function applyDiagnosisResult(result: DiagnosisSuggestionResponse) {
+  diagnosisSuggestion.value = result;
+  recordForm.preliminaryDiagnosis = result.suggestedDiagnoses.split('\n')[0] || recordForm.preliminaryDiagnosis;
 }
 
 function syncFormsFromWorkspace(snapshot: ConsultationWorkspace | null) {
@@ -285,21 +331,86 @@ async function loadNotifications() {
   }
 }
 
+function upsertNotification(notification: NotificationRecordSummary) {
+  notifications.value = [
+    notification,
+    ...notifications.value.filter((item) => item.id !== notification.id),
+  ].slice(0, 20);
+}
+
+function connectNotificationSocket() {
+  if (!authStore.token || notificationSocket) {
+    return;
+  }
+  notificationSocketState.value = 'connecting';
+  notificationSocket = new WebSocket(buildWsUrl('/ws/notifications', authStore.token));
+  notificationSocket.onopen = () => {
+    notificationSocketState.value = 'connected';
+  };
+  notificationSocket.onmessage = (event) => {
+    try {
+      const message = JSON.parse(event.data) as { type?: string; payload?: NotificationRecordSummary };
+      if (message.type === 'notification' && message.payload) {
+        upsertNotification(message.payload);
+        void loadDashboardBundle();
+      }
+    } catch {
+      // ignore malformed realtime messages
+    }
+  };
+  notificationSocket.onclose = () => {
+    notificationSocket = null;
+    notificationSocketState.value = 'closed';
+  };
+  notificationSocket.onerror = () => {
+    notificationSocketState.value = 'closed';
+  };
+}
+
+async function closeRealtimeChannels() {
+  if (activeStreamSessionId.value) {
+    try {
+      await cancelAiStreamSession(activeStreamSessionId.value);
+    } catch {
+      // stream may already have ended
+    }
+    activeStreamSessionId.value = null;
+  }
+  notificationSocket?.close();
+  notificationSocket = null;
+}
+
+async function loadDashboardBundle() {
+  const [overviewData, trendData, aiUsageData, reviewRateData, riskData, triageData] = await Promise.all([
+    getDashboardOverview(),
+    getDashboardTrends(),
+    getDashboardAiUsage(),
+    getDashboardPrescriptionReviewRate(),
+    getDashboardRiskDistribution(),
+    getDashboardTriageAccuracy(),
+  ]);
+  dashboard.value = overviewData;
+  dashboardTrends.value = trendData;
+  aiUsage.value = aiUsageData;
+  prescriptionReviewRate.value = reviewRateData;
+  riskDistribution.value = riskData;
+  triageAccuracy.value = triageData;
+}
+
 async function refreshAll() {
   loading.value = true;
   error.value = '';
   try {
     const doctorId = authStore.doctorId;
-    const [doctorData, dashboardData, queueData, scheduleData, notificationData] = await Promise.all([
+    const [doctorData, , queueData, scheduleData, notificationData] = await Promise.all([
       doctorId ? getDoctor(doctorId) : Promise.resolve(null),
-      getDashboardOverview(),
+      loadDashboardBundle(),
       listDoctorQueue(),
       doctorId ? listDoctorSchedules(doctorId) : Promise.resolve([] as ScheduleOption[]),
       listUnreadNotifications(),
     ]);
 
     doctor.value = doctorData;
-    dashboard.value = dashboardData;
     queue.value = queueData;
     schedules.value = scheduleData;
     notifications.value = notificationData;
@@ -395,12 +506,15 @@ async function diagnoseCurrentCase() {
   diagnosingRecord.value = true;
   error.value = '';
   try {
-    diagnosisSuggestion.value = await diagnose({
-      registrationId: selectedRegistrationId.value,
-      conversationText: consultationForm.conversationText.trim(),
-      diagnosisDirection: consultationForm.diagnosisDirection.trim() || null,
-    });
-    recordForm.preliminaryDiagnosis = diagnosisSuggestion.value.suggestedDiagnoses.split('\n')[0] || recordForm.preliminaryDiagnosis;
+    try {
+      await startAiStream('DIAGNOSIS');
+    } catch {
+      applyDiagnosisResult(await diagnose({
+        registrationId: selectedRegistrationId.value,
+        conversationText: consultationForm.conversationText.trim(),
+        diagnosisDirection: consultationForm.diagnosisDirection.trim() || null,
+      }));
+    }
   } catch (cause) {
     error.value = resolveUiErrorMessage(cause, '生成诊断建议失败');
   } finally {
@@ -417,27 +531,82 @@ async function generateDraftMedicalRecord() {
   generatingRecord.value = true;
   error.value = '';
   try {
-    const draft = await generateMedicalRecord({
-      registrationId: selectedRegistrationId.value,
-      conversationText: consultationForm.conversationText.trim(),
-      diagnosisDirection: consultationForm.diagnosisDirection.trim() || null,
-    });
-    Object.assign(recordForm, {
-      chiefComplaint: draft.chiefComplaint || recordForm.chiefComplaint,
-      presentIllness: draft.presentIllness || consultationForm.conversationText,
-      pastHistory: draft.pastHistory || recordForm.pastHistory,
-      physicalExam: draft.physicalExam || recordForm.physicalExam,
-      preliminaryDiagnosis: draft.preliminaryDiagnosis || recordForm.preliminaryDiagnosis,
-      treatmentPlan: draft.treatmentPlan || recordForm.treatmentPlan,
-      docNote: draft.docNote || recordForm.docNote,
-      aiGenerated: draft.aiGenerated ?? true,
-    });
-    consultationForm.diagnosisDirection = draft.preliminaryDiagnosis || consultationForm.diagnosisDirection;
+    try {
+      await startAiStream('MEDICAL_RECORD');
+    } catch {
+      const draft = await generateMedicalRecord({
+        registrationId: selectedRegistrationId.value,
+        conversationText: consultationForm.conversationText.trim(),
+        diagnosisDirection: consultationForm.diagnosisDirection.trim() || null,
+      });
+      applyMedicalRecordDraft(draft);
+    }
   } catch (cause) {
     error.value = resolveUiErrorMessage(cause, '生成病历草稿失败');
   } finally {
     generatingRecord.value = false;
   }
+}
+
+function parseSsePayload<T>(value: string): T | null {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function startAiStream(taskType: 'MEDICAL_RECORD' | 'DIAGNOSIS') {
+  if (!selectedRegistrationId.value || !consultationForm.conversationText.trim()) {
+    throw new Error('missing stream context');
+  }
+
+  if (!window.EventSource) {
+    throw new Error('event source unsupported');
+  }
+
+  streamText.value = '';
+  const session = await createAiStreamSession({
+    taskType,
+    registrationId: selectedRegistrationId.value,
+    conversationText: consultationForm.conversationText.trim(),
+    diagnosisDirection: consultationForm.diagnosisDirection.trim() || null,
+  });
+  activeStreamSessionId.value = session.sessionId;
+
+  await new Promise<void>((resolve, reject) => {
+    let completed = false;
+    const source = new EventSource(`/api/ai-stream-sessions/${session.sessionId}/events?token=${encodeURIComponent(session.streamToken)}`);
+    const finish = () => {
+      completed = true;
+      activeStreamSessionId.value = null;
+      source.close();
+      resolve();
+    };
+
+    source.addEventListener('chunk', (event) => {
+      const payload = parseSsePayload<{ text?: string }>(event.data);
+      streamText.value += payload?.text ?? event.data;
+    });
+    source.addEventListener('result', (event) => {
+      if (taskType === 'MEDICAL_RECORD') {
+        const payload = parseSsePayload<MedicalRecordSummary>(event.data);
+        if (payload) applyMedicalRecordDraft(payload);
+      } else {
+        const payload = parseSsePayload<DiagnosisSuggestionResponse>(event.data);
+        if (payload) applyDiagnosisResult(payload);
+      }
+    });
+    source.addEventListener('done', finish);
+    source.addEventListener('cancelled', finish);
+    source.onerror = () => {
+      if (!completed) {
+        activeStreamSessionId.value = null;
+        source.close();
+        reject(new Error('stream failed'));
+      }
+    };
+  });
 }
 
 async function saveCurrentMedicalRecord() {
@@ -568,6 +737,11 @@ async function completeSelectedConsultation() {
 
 onMounted(() => {
   void refreshAll();
+  connectNotificationSocket();
+});
+
+onBeforeUnmount(() => {
+  void closeRealtimeChannels();
 });
 </script>
 
@@ -601,6 +775,10 @@ onMounted(() => {
         <span class="pill" :data-tone="selectedRegistration?.status === 'WAITING' ? 'loading' : 'healthy'">
           <ClipboardList :size="14" />
           <span>{{ selectedRegistration?.status || '空闲' }}</span>
+        </span>
+        <span class="pill" :data-tone="notificationSocketState === 'connected' ? 'healthy' : 'loading'">
+          <BellRing :size="14" />
+          <span>WS {{ notificationSocketState }}</span>
         </span>
         <button class="button-ghost" type="button" @click="refreshAll" :disabled="loading">
           <RefreshCw :size="16" :class="{ spinning: loading }" />
@@ -645,6 +823,15 @@ onMounted(() => {
         </article>
       </div>
     </div>
+
+    <DashboardCharts
+      :overview="dashboard"
+      :trends="dashboardTrends"
+      :ai-usage="aiUsage"
+      :prescription-review-rate="prescriptionReviewRate"
+      :risk-distribution="riskDistribution"
+      :triage-accuracy="triageAccuracy"
+    />
 
     <div class="detail-grid">
       <div class="stack">
@@ -715,6 +902,10 @@ onMounted(() => {
             <span>诊疗方向</span>
             <input v-model="consultationForm.diagnosisDirection" placeholder="可不填，系统会用本地规则推断" />
           </label>
+
+          <div v-if="streamText || activeStreamSessionId" class="stream-output">
+            {{ streamText || 'SSE streaming...' }}
+          </div>
 
           <div v-if="diagnosisSuggestion" class="section" style="padding: 0.85rem;">
             <div class="section-head">
