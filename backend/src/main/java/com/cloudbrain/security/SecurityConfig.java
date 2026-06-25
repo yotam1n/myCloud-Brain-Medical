@@ -49,6 +49,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/health").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/ai-stream-sessions/*/events").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/chat/stream").permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/departments/**", "/api/doctors/**").permitAll()
                         .requestMatchers(HttpMethod.POST,
@@ -56,6 +57,7 @@ public class SecurityConfig {
                                 "/api/patient/login",
                                 "/api/doctor/login",
                                 "/api/admin/login").permitAll()
+                        .requestMatchers("/api/chat/**").hasAnyRole("PATIENT", "DOCTOR")
                         .requestMatchers("/api/patient/info").hasRole("PATIENT")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/doctor/**").hasRole("DOCTOR")
