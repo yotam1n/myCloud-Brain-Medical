@@ -10,6 +10,7 @@ import {
 } from 'lucide-vue-next';
 import SideNav from '@/components/layout/SideNav.vue';
 import StatusChip from '@/components/shared/StatusChip.vue';
+import AdminEditorPanel from './panels/AdminEditorPanel.vue';
 
 import {
   adminListDepartments,
@@ -801,6 +802,8 @@ onBeforeUnmount(() => {
           <component :is="PanelComp" :workspace="adminWorkspace" v-if="PanelComp" />
         </Suspense>
       </RouterView>
+
+      <AdminEditorPanel :workspace="adminWorkspace" v-if="adminWorkspace.currentKind" />
     </div>
   </div>
 </template>
