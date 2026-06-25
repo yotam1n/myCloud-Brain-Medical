@@ -31,6 +31,7 @@ import type {
 } from '@/api/workflow';
 import { useAuthStore } from '@/stores/auth';
 import { resolveUiErrorMessage } from '@/utils/zh';
+import AiChatLauncher from '@/components/chat/AiChatLauncher.vue';
 import PatientHistoryPanel from '@/views/patient/panels/PatientHistoryPanel.vue';
 import PatientOverviewPanel from '@/views/patient/panels/PatientOverviewPanel.vue';
 import PatientProfilePanel from '@/views/patient/panels/PatientProfilePanel.vue';
@@ -475,5 +476,6 @@ onMounted(() => {
 
       <component :is="patientPanelComponent" :workspace="workspace" />
     </div>
+    <AiChatLauncher role="patient" />
   </section>
 </template>

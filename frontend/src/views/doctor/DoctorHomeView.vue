@@ -58,6 +58,7 @@ import type {
   TriageAccuracyStats,
 } from '@/api/workflow';
 import { resolveUiErrorMessage } from '@/utils/zh';
+import AiChatLauncher from '@/components/chat/AiChatLauncher.vue';
 
 interface PrescriptionDraftItem {
   key: number;
@@ -903,5 +904,6 @@ onBeforeUnmount(() => {
 
       <component :is="doctorPanelComponent" :workspace="doctorWorkspace" />
     </div>
+    <AiChatLauncher role="doctor" />
   </section>
 </template>
