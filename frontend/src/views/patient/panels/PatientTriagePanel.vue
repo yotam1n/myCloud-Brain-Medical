@@ -1,60 +1,58 @@
 <script setup lang="ts">
-import { Building2, ScanSearch, Stethoscope } from 'lucide-vue-next';
+import { Sparkles, ArrowRight } from 'lucide-vue-next';
+import SectionCard from '@/components/shared/SectionCard.vue';
+import StatusChip from '@/components/shared/StatusChip.vue';
+import EmptyState from '@/components/shared/EmptyState.vue';
 
 const { workspace } = defineProps<{ workspace: any }>();
 </script>
 
 <template>
-  <section class="section workspace-panel">
-    <div class="section-head">
-      <div>
-        <h3 class="section-title">智能分诊</h3>
-        <p class="section-copy">输入主诉后，会优先返回本地规则推荐的科室、医生和号源。</p>
-      </div>
-      <button class="button-secondary" type="button" @click="workspace.runTriage" :disabled="workspace.triaging">
-        <ScanSearch :size="16" />
-        <span>{{ workspace.triaging ? '分诊中' : '开始分诊' }}</span>
-      </button>
-    </div>
-
-    <label class="field">
-      <span>主诉</span>
+  <div class="p-4 space-y-4">
+    <div class="space-y-3">
       <textarea
         v-model="workspace.triageForm.chiefComplaint"
-        class="textarea"
-        placeholder="例如：咳嗽三天伴发热、胸闷心慌、腹痛腹泻等"
+        class="input-field phone-input h-28 resize-none"
+        placeholder="请描述您的不适症状，例如：头痛、发热、咳嗽等..."
       />
-    </label>
-
-    <div class="candidate-list" v-if="workspace.triageResult">
-      <article class="candidate-item active">
-        <h4>推荐科室：{{ workspace.triageResult.recommendedDept }}</h4>
-        <p>{{ workspace.triageResult.reason }}</p>
-      </article>
-      <button
-        v-for="doctor in workspace.triageResult.recommendedDoctors"
-        :key="doctor.id"
-        type="button"
-        class="candidate-item"
-        :class="{ active: workspace.selectedDoctorId === doctor.id }"
-        @click="workspace.chooseDoctor(doctor.id)"
-      >
-        <h4>{{ doctor.name }}</h4>
-        <p>{{ doctor.title || '门诊医生' }} / {{ doctor.specialty || '常规诊疗' }}</p>
+      <button class="btn-primary w-full" type="button" @click="workspace.runTriage()" :disabled="workspace.triaging || !workspace.triageForm.chiefComplaint.trim()">
+        <Sparkles :size="16" />
+        <span>{{ workspace.triaging ? '分析中...' : '智能分诊' }}</span>
       </button>
     </div>
 
-    <div class="empty-state" v-else>
-      先填写主诉，再点击开始分诊，系统会给出推荐科室和医生。
+    <div v-if="workspace.triageResult" class="space-y-4">
+      <SectionCard title="分诊结果">
+        <div class="space-y-3 text-sm">
+          <div>
+            <span class="text-text-secondary">主诉</span>
+            <p class="mt-0.5 font-medium">{{ workspace.triageResult.chiefComplaint }}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <StatusChip tone="success">{{ workspace.triageResult.recommendedDept }}</StatusChip>
+            <StatusChip tone="info">{{ workspace.triageResult.recommendationSource }}</StatusChip>
+          </div>
+          <p class="text-text-secondary text-xs">{{ workspace.triageResult.reason }}</p>
+        </div>
+      </SectionCard>
+
+      <SectionCard v-if="workspace.triageResult.recommendedDoctors.length" title="推荐医生">
+        <div class="space-y-2">
+          <div v-for="doc in workspace.triageResult.recommendedDoctors" :key="doc.id" class="flex items-center justify-between py-2 border-b border-border last:border-b-0">
+            <div>
+              <p class="text-sm font-medium">{{ doc.name }}</p>
+              <p class="text-xs text-text-secondary">{{ doc.title }} · {{ doc.departmentName }}</p>
+            </div>
+            <button class="btn-secondary !py-1 !px-3 !text-xs" type="button" @click="workspace.chooseDoctor(doc.id)">选择</button>
+          </div>
+        </div>
+      </SectionCard>
+
+      <button class="btn-primary w-full" type="button" @click="$router.push('/patient/registration')">
+        去挂号 <ArrowRight :size="16" />
+      </button>
     </div>
 
-    <div class="workspace-note" v-if="workspace.triageResult">
-      <Building2 :size="16" />
-      <div>
-        <strong>{{ workspace.triageResult.recommendedDept }}</strong>
-        <p>推荐理由：{{ workspace.triageResult.reason }}</p>
-      </div>
-      <Stethoscope :size="16" />
-    </div>
-  </section>
+    <EmptyState v-else icon="search" title="输入症状开始分诊" description="AI 会根据您的症状推荐合适的科室和医生" />
+  </div>
 </template>

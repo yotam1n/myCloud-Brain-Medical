@@ -1,204 +1,119 @@
 <script setup lang="ts">
-import { Plus, Search, Send, Stethoscope, Trash2 } from 'lucide-vue-next';
+import { Sparkles } from 'lucide-vue-next';
+import SectionCard from '@/components/shared/SectionCard.vue';
+import StatusChip from '@/components/shared/StatusChip.vue';
+import EmptyState from '@/components/shared/EmptyState.vue';
+import LoadingSkeleton from '@/components/shared/LoadingSkeleton.vue';
 
 const { workspace } = defineProps<{ workspace: any }>();
 </script>
 
 <template>
-  <section class="section workspace-panel">
-    <div class="section-head">
-      <div>
-        <h3 class="section-title">接诊工作区</h3>
-        <p class="section-copy">先选患者，再完成问诊、病历和审方。</p>
-      </div>
-      <button class="button-secondary" type="button" @click="workspace.beginSelectedConsultation" :disabled="workspace.startingConsultation">
-        <Stethoscope :size="16" />
-        <span>{{ workspace.startingConsultation ? '启动中' : '开始接诊' }}</span>
-      </button>
-    </div>
-
-    <div class="detail-grid two">
-      <section class="section subtle-section">
-        <div class="section-head">
-          <div>
-            <h4 class="section-title">待接诊队列</h4>
-            <p class="section-copy">点击患者后，会加载病历工作区。</p>
-          </div>
-        </div>
-
-        <ul class="mini-list overflow-list">
-          <li v-for="registration in workspace.queue" :key="registration.id" class="mini-item" :class="{ active: workspace.selectedRegistrationId === registration.id }">
-            <button class="candidate-item" type="button" @click="workspace.selectRegistration(registration.id)">
-              <div class="mini-item-head">
-                <div class="mini-item-title">{{ registration.patientName || '匿名患者' }} / {{ registration.departmentName || '未分科' }}</div>
-                <span class="pill" :data-tone="registration.status === 'WAITING' ? 'loading' : 'healthy'">{{ registration.status }}</span>
-              </div>
-              <div class="mini-item-meta">
-                <span>{{ workspace.formatDate(registration.workDate) }} {{ registration.period || '' }}</span>
-                <span>号源 #{{ registration.scheduleId }}</span>
-                <span>病历 {{ registration.medicalRecordId ?? '未生成' }}</span>
-              </div>
-              <p class="mini-item-copy">{{ registration.chiefComplaint || '暂无主诉' }}</p>
-            </button>
-          </li>
-        </ul>
-      </section>
-
-      <section class="section subtle-section">
-        <div class="section-head">
-          <div>
-            <h4 class="section-title">问诊与分诊建议</h4>
-            <p class="section-copy">SSE 流式输出和本地/AI 建议都在这里。</p>
-          </div>
-          <div class="action-row">
-            <button class="button-secondary" type="button" @click="workspace.diagnoseCurrentCase" :disabled="workspace.diagnosingRecord">
-              <Search :size="16" />
-              <span>{{ workspace.diagnosingRecord ? '生成中' : '生成诊断' }}</span>
-            </button>
-            <button class="button-secondary" type="button" @click="workspace.generateDraftMedicalRecord" :disabled="workspace.generatingRecord">
-              <Search :size="16" />
-              <span>{{ workspace.generatingRecord ? '生成中' : '生成病历草稿' }}</span>
-            </button>
-          </div>
-        </div>
-
-        <label class="field">
-          <span>问诊文本</span>
-          <textarea v-model="workspace.consultationForm.conversationText" class="textarea" placeholder="记录患者主诉、现病史、查体要点等" />
-        </label>
-        <label class="field">
-          <span>诊疗方向</span>
-          <input v-model="workspace.consultationForm.diagnosisDirection" placeholder="可不填，系统会用本地规则推断" />
-        </label>
-
-        <div v-if="workspace.streamText || workspace.activeStreamSessionId" class="stream-output">
-          {{ workspace.streamText || 'SSE streaming...' }}
-        </div>
-
-        <div v-if="workspace.diagnosisSuggestion" class="section" style="padding: 0.85rem;">
-          <div class="section-head">
-            <div>
-              <h4 class="section-title">诊断建议</h4>
-              <p class="section-copy">{{ workspace.diagnosisSuggestion.summary }}</p>
-            </div>
-            <span class="pill" data-tone="healthy">{{ workspace.diagnosisSuggestion.adoptionStatus }}</span>
-          </div>
-          <p class="mini-item-copy">候选诊断：{{ workspace.diagnosisSuggestion.suggestedDiagnoses }}</p>
-          <p class="mini-item-copy">建议检查：{{ workspace.diagnosisSuggestion.suggestedExamItems }}</p>
-        </div>
-      </section>
-    </div>
-
-    <div class="detail-grid two">
-      <section class="section subtle-section">
-        <div class="section-head">
-          <div>
-            <h4 class="section-title">病历草稿</h4>
-            <p class="section-copy">可由 AI 辅助生成，再人工修订保存。</p>
-          </div>
-          <button class="button-secondary" type="button" @click="workspace.saveCurrentMedicalRecord" :disabled="workspace.savingRecord">
-            <Send :size="16" />
-            <span>{{ workspace.savingRecord ? '保存中' : '保存病历' }}</span>
+  <div class="space-y-6">
+    <div class="grid grid-cols-[240px_1fr] gap-6">
+      <!-- Left: Patient queue -->
+      <SectionCard title="患者队列" class="h-fit">
+        <div v-if="workspace.queue.length" class="space-y-1">
+          <button
+            v-for="reg in workspace.queue"
+            :key="reg.id"
+            type="button"
+            class="w-full text-left px-3 py-2 rounded-md text-sm transition"
+            :class="workspace.selectedRegistrationId === reg.id ? 'bg-brand-soft text-brand font-medium' : 'hover:bg-gray-50'"
+            @click="workspace.selectRegistration(reg.id)"
+          >
+            <p>{{ reg.patientName }}</p>
+            <p class="text-xs text-text-secondary">{{ workspace.truncate(reg.chiefComplaint, 20) }}</p>
           </button>
         </div>
+        <EmptyState v-else icon="calendar" title="暂无患者" />
+      </SectionCard>
 
-        <div class="field-grid">
-          <label class="field"><span>主诉</span><input v-model="workspace.recordForm.chiefComplaint" /></label>
-          <label class="field"><span>现病史</span><input v-model="workspace.recordForm.presentIllness" /></label>
-          <label class="field"><span>既往史</span><input v-model="workspace.recordForm.pastHistory" /></label>
-          <label class="field"><span>查体</span><input v-model="workspace.recordForm.physicalExam" /></label>
-        </div>
+      <!-- Right: Workspace -->
+      <div class="space-y-4">
+        <LoadingSkeleton v-if="workspace.workspaceLoading" :rows="3" />
 
-        <label class="field"><span>初步诊断</span><textarea v-model="workspace.recordForm.preliminaryDiagnosis" class="textarea" /></label>
-        <label class="field"><span>治疗计划</span><textarea v-model="workspace.recordForm.treatmentPlan" class="textarea" /></label>
-        <label class="field"><span>医生备注</span><textarea v-model="workspace.recordForm.docNote" class="textarea" /></label>
-        <label class="field">
-          <span class="toolbar">
-            <input v-model="workspace.recordForm.aiGenerated" type="checkbox" />
-            <span>标记为 AI 辅助生成</span>
-          </span>
-        </label>
-      </section>
-
-      <section class="section subtle-section">
-        <div class="section-head">
-          <div>
-            <h4 class="section-title">处方审方</h4>
-            <p class="section-copy">先审方，再提交。</p>
-          </div>
-          <div class="action-row">
-            <button class="button-secondary" type="button" @click="workspace.reviewCurrentPrescription" :disabled="workspace.reviewingPrescription">
-              <Search :size="16" />
-              <span>{{ workspace.reviewingPrescription ? '审方中' : '审方' }}</span>
+        <div v-else-if="workspace.workspace" class="space-y-4">
+          <!-- Quick actions -->
+          <div class="flex items-center gap-2">
+            <button class="btn-primary" type="button" @click="workspace.beginSelectedConsultation()" :disabled="workspace.startingConsultation">
+              {{ workspace.startingConsultation ? '接诊中...' : '开始接诊' }}
             </button>
-            <button class="button-secondary" type="button" @click="workspace.submitCurrentPrescription" :disabled="workspace.submittingPrescription">
-              <Send :size="16" />
-              <span>{{ workspace.submittingPrescription ? '提交中' : '提交处方' }}</span>
+            <button class="btn-danger" type="button" @click="workspace.completeSelectedConsultation()" :disabled="workspace.completingConsultation">
+              {{ workspace.completingConsultation ? '处理中...' : '结束就诊' }}
             </button>
           </div>
-        </div>
 
-        <div class="field-grid">
-          <label class="field"><span>药品搜索</span><input v-model="workspace.drugSearch" placeholder="按名称或拼音搜索药品" /></label>
-          <div class="action-row" style="align-self: end;">
-            <button class="button-secondary" type="button" @click="workspace.loadDrugCatalog">
-              <Search :size="16" />
-              <span>加载药品</span>
-            </button>
-            <button class="button-ghost" type="button" @click="workspace.addPrescriptionItem">
-              <Plus :size="16" />
-              <span>添加项目</span>
-            </button>
-          </div>
-        </div>
-
-        <ul class="mini-list">
-          <li v-for="item in workspace.prescriptionItems" :key="item.key" class="mini-item">
-            <div class="mini-item-head">
-              <div class="mini-item-title">处方项目</div>
-              <button class="button-ghost" type="button" @click="workspace.removePrescriptionItem(item.key)">
-                <Trash2 :size="16" />
-                <span>删除</span>
+          <!-- Conversation -->
+          <SectionCard title="问诊记录">
+            <textarea v-model="workspace.consultationForm.conversationText" class="input-field h-32 resize-none" placeholder="输入问诊对话内容..." />
+            <div class="flex gap-2 mt-3">
+              <button class="btn-primary" type="button" @click="workspace.generateDraftMedicalRecord()" :disabled="workspace.generatingRecord">
+                <Sparkles :size="16" /><span>{{ workspace.generatingRecord ? '生成中...' : 'AI生成病历' }}</span>
+              </button>
+              <button class="btn-secondary" type="button" @click="workspace.diagnoseCurrentCase()" :disabled="workspace.diagnosingRecord">
+                <Sparkles :size="16" /><span>{{ workspace.diagnosingRecord ? '诊断中...' : 'AI诊断建议' }}</span>
               </button>
             </div>
-            <div class="field-grid">
-              <label class="field">
-                <span>药品</span>
-                <select v-model="item.drugId" @change="workspace.applyDrugDefaults(item)">
-                  <option :value="null">请选择药品</option>
-                  <option v-for="drug in workspace.availableDrugs" :key="drug.id" :value="drug.id">
-                    {{ drug.name }}{{ drug.specification ? ` / ${drug.specification}` : '' }}
-                  </option>
+          </SectionCard>
+
+          <!-- Medical record form -->
+          <SectionCard title="病历草稿">
+            <div class="grid grid-cols-2 gap-3">
+              <label class="label-text">主诉 <textarea v-model="workspace.recordForm.chiefComplaint" class="input-field h-16 resize-none mt-1" /></label>
+              <label class="label-text">现病史 <textarea v-model="workspace.recordForm.presentIllness" class="input-field h-16 resize-none mt-1" /></label>
+              <label class="label-text">既往史 <textarea v-model="workspace.recordForm.pastHistory" class="input-field h-16 resize-none mt-1" /></label>
+              <label class="label-text">体格检查 <textarea v-model="workspace.recordForm.physicalExam" class="input-field h-16 resize-none mt-1" /></label>
+              <label class="label-text col-span-2">初步诊断 <textarea v-model="workspace.recordForm.preliminaryDiagnosis" class="input-field h-16 resize-none mt-1" /></label>
+              <label class="label-text col-span-2">治疗方案 <textarea v-model="workspace.recordForm.treatmentPlan" class="input-field h-16 resize-none mt-1" /></label>
+            </div>
+            <button class="btn-primary mt-3" type="button" @click="workspace.saveCurrentMedicalRecord()" :disabled="workspace.savingRecord">
+              {{ workspace.savingRecord ? '保存中...' : '保存病历' }}
+            </button>
+          </SectionCard>
+
+          <!-- Prescription -->
+          <SectionCard title="处方编辑">
+            <div class="space-y-3">
+              <div v-for="item in workspace.prescriptionItems" :key="item.key" class="flex items-center gap-2">
+                <select v-model="item.drugId" class="input-field flex-1" @change="workspace.applyDrugDefaults(item)">
+                  <option :value="null" disabled>选择药品</option>
+                  <option v-for="drug in workspace.availableDrugs" :key="drug.id" :value="drug.id">{{ drug.name }}</option>
                 </select>
-              </label>
-              <label class="field"><span>剂量</span><input v-model="item.dosage" /></label>
-              <label class="field"><span>频次</span><input v-model="item.frequency" /></label>
-              <label class="field"><span>疗程</span><input v-model="item.duration" /></label>
-              <label class="field"><span>数量</span><input v-model="item.quantity" /></label>
+                <input v-model="item.dosage" class="input-field w-16" placeholder="用量" />
+                <input v-model="item.frequency" class="input-field w-20" placeholder="频次" />
+                <input v-model="item.quantity" class="input-field w-16" placeholder="数量" />
+                <button v-if="workspace.prescriptionItems.length > 1" class="btn-ghost !p-1 !text-danger" type="button" @click="workspace.removePrescriptionItem(item.key)">✕</button>
+              </div>
+              <div class="flex gap-2">
+                <button class="btn-secondary" type="button" @click="workspace.addPrescriptionItem()">+ 添加药品</button>
+                <button class="btn-primary" type="button" @click="workspace.reviewCurrentPrescription()" :disabled="workspace.reviewingPrescription">
+                  {{ workspace.reviewingPrescription ? '审方中...' : '提交审方' }}
+                </button>
+              </div>
             </div>
-            <label class="field"><span>用法说明</span><input v-model="item.usageInstruction" /></label>
-          </li>
-        </ul>
+          </SectionCard>
 
-        <label class="field">
-          <span>医生确认</span>
-          <textarea v-model="workspace.manualConfirmation" class="textarea" placeholder="说明本次审方确认内容" />
-        </label>
-
-        <div v-if="workspace.reviewResult" class="section" style="padding: 0.85rem;">
-          <div class="section-head">
-            <div>
-              <h4 class="section-title">审方结果</h4>
-              <p class="section-copy">{{ workspace.reviewResult.llmSummary || workspace.reviewResult.llmSuggestion }}</p>
+          <!-- Review result -->
+          <SectionCard v-if="workspace.reviewResult" title="审方结果">
+            <div class="space-y-2 text-sm">
+              <div class="flex items-center gap-2">
+                <span class="text-text-secondary">风险等级：</span>
+                <StatusChip :tone="workspace.reviewResult.riskLevel === 'HIGH' ? 'danger' : workspace.reviewResult.riskLevel === 'MEDIUM' ? 'warning' : 'success'">
+                  {{ workspace.reviewResult.riskLevel === 'HIGH' ? '高风险' : workspace.reviewResult.riskLevel === 'MEDIUM' ? '中风险' : '低风险' }}
+                </StatusChip>
+              </div>
+              <div v-if="workspace.reviewResult.localRuleHits" class="p-3 rounded-md bg-red-50 text-danger text-xs whitespace-pre-wrap">{{ workspace.reviewResult.localRuleHits }}</div>
+              <div v-if="workspace.reviewResult.llmSuggestion" class="p-3 rounded-md bg-blue-50 text-info text-xs whitespace-pre-wrap">{{ workspace.reviewResult.llmSuggestion }}</div>
             </div>
-            <span class="pill" :data-tone="workspace.reviewResult.riskLevel === 'HIGH' ? 'danger' : workspace.reviewResult.riskLevel === 'MEDIUM' ? 'loading' : 'healthy'">
-              {{ workspace.reviewResult.riskLevel || 'UNKNOWN' }}
-            </span>
-          </div>
-          <p class="mini-item-copy">规则命中：{{ workspace.reviewResult.localRuleHits || '无' }}</p>
-          <p class="mini-item-copy">上下文缺失：{{ workspace.reviewResult.contextMissingItems || '无' }}</p>
+            <button class="btn-primary mt-3" type="button" @click="workspace.submitCurrentPrescription()" :disabled="workspace.submittingPrescription">
+              {{ workspace.submittingPrescription ? '提交中...' : '确认提交处方' }}
+            </button>
+          </SectionCard>
         </div>
-      </section>
+
+        <EmptyState v-else icon="inbox" title="请选择患者开始接诊" description="从左侧队列选择一个患者" />
+      </div>
     </div>
-  </section>
+  </div>
 </template>
