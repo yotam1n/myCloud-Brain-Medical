@@ -1181,3 +1181,5 @@ button.candidate-item:hover {
     justify-self: start;
   }
 }
+
+@import './ai-global.css';
