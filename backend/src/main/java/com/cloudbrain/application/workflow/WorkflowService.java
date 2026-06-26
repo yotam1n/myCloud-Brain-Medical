@@ -106,6 +106,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class WorkflowService {
@@ -141,6 +142,7 @@ public class WorkflowService {
     private final TriageAccuracyFeedbackJpaRepository triageAccuracyFeedbackRepository;
     private final AICallRecordJpaRepository aiCallRecordRepository;
     private final NotificationWebSocketHandler notificationWebSocketHandler;
+    private final TransactionTemplate transactionTemplate;
 
     public WorkflowService(DepartmentJpaRepository departmentRepository,
                            DoctorJpaRepository doctorRepository,
@@ -163,7 +165,8 @@ public class WorkflowService {
                            FeedbackJpaRepository feedbackRepository,
                            TriageAccuracyFeedbackJpaRepository triageAccuracyFeedbackRepository,
                            AICallRecordJpaRepository aiCallRecordRepository,
-                           NotificationWebSocketHandler notificationWebSocketHandler) {
+                           NotificationWebSocketHandler notificationWebSocketHandler,
+                           TransactionTemplate transactionTemplate) {
         this.departmentRepository = departmentRepository;
         this.doctorRepository = doctorRepository;
         this.patientRepository = patientRepository;
@@ -186,6 +189,7 @@ public class WorkflowService {
         this.triageAccuracyFeedbackRepository = triageAccuracyFeedbackRepository;
         this.aiCallRecordRepository = aiCallRecordRepository;
         this.notificationWebSocketHandler = notificationWebSocketHandler;
+        this.transactionTemplate = transactionTemplate;
     }
 
     @Transactional(readOnly = true)
@@ -384,10 +388,13 @@ public class WorkflowService {
         registration.setVisitLevelSnapshot(schedule.getVisitLevel());
         registration.setSlotReleased(false);
         registration.setVersion(0);
+        final Long scheduleId = schedule.getId();
         try {
             registration = registrationRepository.saveAndFlush(registration);
         } catch (DataIntegrityViolationException exception) {
-            scheduleRepository.releaseSlotOnce(schedule.getId());
+            // Release the slot in a new transaction because the current one is marked rollback-only
+            transactionTemplate.executeWithoutResult(status ->
+                    scheduleRepository.releaseSlotOnce(scheduleId));
             throw conflict("you already have an active registration for this schedule");
         }
 

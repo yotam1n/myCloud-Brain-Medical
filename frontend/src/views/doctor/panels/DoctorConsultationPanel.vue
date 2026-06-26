@@ -1,11 +1,98 @@
 <script setup lang="ts">
-import { Sparkles } from 'lucide-vue-next';
+import { ref, watch } from 'vue';
+import { Sparkles, PanelRightOpen } from 'lucide-vue-next';
 import SectionCard from '@/components/shared/SectionCard.vue';
 import StatusChip from '@/components/shared/StatusChip.vue';
 import EmptyState from '@/components/shared/EmptyState.vue';
 import LoadingSkeleton from '@/components/shared/LoadingSkeleton.vue';
+import WorkflowSidebar from '@/components/workflow/WorkflowSidebar.vue';
+import { useAiStreamStore } from '@/stores/ai-stream';
 
 const { workspace } = defineProps<{ workspace: any }>();
+
+const sidebarOpen = ref(false);
+const sidebarRef = ref<InstanceType<typeof WorkflowSidebar> | null>(null);
+const aiStreamStore = useAiStreamStore();
+
+function toggleSidebar() {
+  sidebarOpen.value = !sidebarOpen.value;
+}
+
+// Handle sidebar step trigger
+function onSidebarTrigger(stepId: string) {
+  switch (stepId) {
+    case 'MEDICAL_RECORD':
+      workspace.generateDraftMedicalRecord();
+      break;
+    case 'DIAGNOSIS':
+      workspace.diagnoseCurrentCase();
+      break;
+    case 'PRESCRIPTION_REVIEW':
+      workspace.reviewCurrentPrescription?.();
+      break;
+  }
+}
+
+// Handle sidebar adopt
+function onSidebarAdopt(stepId: string) {
+  switch (stepId) {
+    case 'MEDICAL_RECORD':
+      // Record is already populated by stream, save it
+      workspace.saveCurrentMedicalRecord();
+      break;
+    case 'DIAGNOSIS':
+      // Parse the diagnosis text and adopt first diagnosis
+      if (workspace.diagnosisSuggestions?.length) {
+        const first = workspace.diagnosisSuggestions[0];
+        if (first.name) workspace.recordForm.preliminaryDiagnosis = first.name;
+      }
+      break;
+    case 'PRESCRIPTION_REVIEW':
+      // Review results are already displayed
+      break;
+  }
+}
+
+// Watch ai-stream store to sync content to sidebar
+watch(() => aiStreamStore.streamText, (text) => {
+  if (!sidebarRef.value || !text) return;
+  // Determine which step is running
+  if (aiStreamStore.streaming) {
+    // Content is updated in real-time via the store
+    if (workspace.generatingRecord) {
+      sidebarRef.value.updateStepContent('MEDICAL_RECORD', text);
+    } else if (workspace.diagnosingRecord) {
+      sidebarRef.value.updateStepContent('DIAGNOSIS', text);
+    }
+  }
+});
+
+watch(() => workspace.generatingRecord, (val) => {
+  if (!val && sidebarRef.value) {
+    sidebarRef.value.setStepCompleted('MEDICAL_RECORD');
+  }
+});
+
+watch(() => workspace.diagnosingRecord, (val) => {
+  if (!val && sidebarRef.value && workspace.diagnosisSuggestion) {
+    sidebarRef.value.setStepCompleted('DIAGNOSIS');
+    const text = workspace.diagnosisSuggestion.suggestedDiagnoses || '';
+    sidebarRef.value.updateStepContent('DIAGNOSIS', text);
+  }
+});
+
+watch(() => workspace.reviewingPrescription, (val) => {
+  if (!val && sidebarRef.value && workspace.reviewResult) {
+    sidebarRef.value.setStepCompleted('PRESCRIPTION_REVIEW');
+    const r = workspace.reviewResult;
+    const content = [
+      r.riskLevel ? `风险等级: ${r.riskLevel}` : '',
+      r.localRuleHits ? `本地规则命中: ${r.localRuleHits}` : '',
+      r.llmSuggestion || '',
+    ].filter(Boolean).join('\n\n');
+    sidebarRef.value.updateStepContent('PRESCRIPTION_REVIEW', content);
+  }
+});
 
 interface DiagnosisEntry { name: string; confidence: number }
 interface RuleHitEntry { ruleName?: string; alertMessage?: string; suggestion?: string; riskLevel?: string }
@@ -259,5 +346,23 @@ function ruleRiskClass(level: string | null | undefined): string {
         <EmptyState v-else icon="inbox" title="请选择患者开始接诊" description="从左侧队列选择一个患者" />
       </div>
     </div>
+
+    <!-- AI Workflow Sidebar toggle -->
+    <button
+      class="fixed right-0 top-1/2 -translate-y-1/2 z-30 w-9 h-20 bg-brand text-white rounded-l-lg flex items-center justify-center shadow-lg hover:bg-brand-dark transition cursor-pointer"
+      @click="toggleSidebar"
+      title="AI 工作台"
+    >
+      <PanelRightOpen :size="18" />
+    </button>
+
+    <!-- AI Workflow Sidebar -->
+    <WorkflowSidebar
+      ref="sidebarRef"
+      :open="sidebarOpen"
+      @close="sidebarOpen = false"
+      @trigger="onSidebarTrigger"
+      @adopt="onSidebarAdopt"
+    />
   </div>
 </template>

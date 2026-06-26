@@ -98,6 +98,7 @@ const generatingRecord = ref(false);
 const diagnosingRecord = ref(false);
 const reviewingPrescription = ref(false);
 const submittingPrescription = ref(false);
+const showPrescriptionConfirm = ref(false);
 const startingConsultation = ref(false);
 const completingConsultation = ref(false);
 const notificationLoading = ref(false);
@@ -106,6 +107,9 @@ const notificationSocketState = ref<'idle' | 'connecting' | 'connected' | 'close
 const streamText = ref('');
 const activeStreamSessionId = ref<string | null>(null);
 let notificationSocket: WebSocket | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempt = 0;
+const MAX_RECONNECT_DELAY = 30_000;
 
 const consultationForm = reactive({
   conversationText: '',
@@ -231,7 +235,10 @@ const doctorWorkspace = reactive({
   startAiStream,
   saveCurrentMedicalRecord,
   reviewCurrentPrescription,
+  requestSubmitPrescription,
   submitCurrentPrescription,
+  cancelPrescriptionSubmit,
+  showPrescriptionConfirm,
   ackNotification,
   completeSelectedConsultation,
 });
@@ -411,14 +418,32 @@ function upsertNotification(notification: NotificationRecordSummary) {
   ].slice(0, 20);
 }
 
+function scheduleReconnect() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+  }
+  const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), MAX_RECONNECT_DELAY);
+  reconnectAttempt++;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (notificationSocketState.value !== 'connected') {
+      connectNotificationSocket();
+    }
+  }, delay);
+}
+
 function connectNotificationSocket() {
-  if (!authStore.token || notificationSocket) {
+  if (!authStore.token) {
+    return;
+  }
+  if (notificationSocket && notificationSocket.readyState === WebSocket.OPEN) {
     return;
   }
   notificationSocketState.value = 'connecting';
   notificationSocket = new WebSocket(buildWsUrl('/ws/notifications', authStore.token));
   notificationSocket.onopen = () => {
     notificationSocketState.value = 'connected';
+    reconnectAttempt = 0;
   };
   notificationSocket.onmessage = (event) => {
     try {
@@ -434,13 +459,18 @@ function connectNotificationSocket() {
   notificationSocket.onclose = () => {
     notificationSocket = null;
     notificationSocketState.value = 'closed';
+    scheduleReconnect();
   };
   notificationSocket.onerror = () => {
-    notificationSocketState.value = 'closed';
+    notificationSocket?.close();
   };
 }
 
 async function closeRealtimeChannels() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   if (activeStreamSessionId.value) {
     try {
       await cancelAiStreamSession(activeStreamSessionId.value);
@@ -741,9 +771,23 @@ async function reviewCurrentPrescription() {
   }
 }
 
-async function submitCurrentPrescription() {
+function requestSubmitPrescription() {
   if (!selectedRegistrationId.value || !reviewResult.value?.reviewId) {
     error.value = '请先完成审方';
+    return;
+  }
+  const items = buildPrescriptionPayload();
+  if (!items.length) {
+    error.value = '请先至少添加一条处方项目';
+    return;
+  }
+  showPrescriptionConfirm.value = true;
+}
+
+async function submitCurrentPrescription() {
+  showPrescriptionConfirm.value = false;
+
+  if (!selectedRegistrationId.value || !reviewResult.value?.reviewId) {
     return;
   }
 
@@ -772,6 +816,10 @@ async function submitCurrentPrescription() {
   } finally {
     submittingPrescription.value = false;
   }
+}
+
+function cancelPrescriptionSubmit() {
+  showPrescriptionConfirm.value = false;
 }
 
 async function ackNotification(id: number) {

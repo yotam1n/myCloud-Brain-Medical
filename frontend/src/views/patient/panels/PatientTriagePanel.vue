@@ -3,6 +3,7 @@ import { Sparkles, ArrowRight } from 'lucide-vue-next';
 import SectionCard from '@/components/shared/SectionCard.vue';
 import StatusChip from '@/components/shared/StatusChip.vue';
 import EmptyState from '@/components/shared/EmptyState.vue';
+import ConversationalTriageSection from './ConversationalTriageSection.vue';
 
 const { workspace } = defineProps<{ workspace: any }>();
 </script>
@@ -24,12 +25,12 @@ const { workspace } = defineProps<{ workspace: any }>();
     <div v-if="workspace.triageResult" class="space-y-4">
       <!-- AI / Local badge -->
       <div class="flex items-center gap-2">
-        <span v-if="workspace.triageResult.recommendationSource === 'AI'" class="ai-badge">AI 推荐</span>
+        <span v-if="workspace.triageResult.recommendationSource !== 'LOCAL_RULE'" class="ai-badge">AI 推荐</span>
         <span v-else class="degraded-badge">本地规则匹配</span>
       </div>
 
       <!-- Degraded notice -->
-      <div v-if="workspace.triageResult.recommendationSource !== 'AI'" class="ai-degraded-notice">
+      <div v-if="workspace.triageResult.recommendationSource === 'LOCAL_RULE'" class="ai-degraded-notice">
         ⚠️ AI 服务不可用，当前使用本地规则引擎匹配，建议结合人工判断。
       </div>
 
@@ -75,5 +76,8 @@ const { workspace } = defineProps<{ workspace: any }>();
     </div>
 
     <EmptyState v-else icon="search" title="输入症状开始分诊" description="AI 会根据您的症状推荐合适的科室和医生" />
+
+    <!-- Conversational AI Triage -->
+    <ConversationalTriageSection :workspace="workspace" />
   </div>
 </template>

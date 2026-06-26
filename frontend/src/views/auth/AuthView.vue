@@ -13,6 +13,13 @@ const authStore = useAuthStore();
 const role = ref<WorkspaceRole>('patient');
 const mode = ref<'login' | 'register'>('login');
 const submitted = ref(false);
+const expiredNotice = ref('');
+
+const redirectTarget = computed(() => {
+  const redirect = route.query.redirect;
+  if (typeof redirect === 'string' && redirect.startsWith('/')) return redirect;
+  return role.value === 'patient' ? '/patient' : role.value === 'doctor' ? '/doctor' : '/admin';
+});
 
 const form = reactive({
   username: '',
@@ -29,12 +36,6 @@ const roleOptions: Array<{ value: WorkspaceRole; label: string; icon: typeof Use
   { value: 'admin', label: '管理员', icon: ShieldCheck },
 ];
 
-const redirectTarget = computed(() => {
-  const redirect = route.query.redirect;
-  if (typeof redirect === 'string' && redirect.startsWith('/')) return redirect;
-  return role.value === 'patient' ? '/patient' : role.value === 'doctor' ? '/doctor' : '/admin';
-});
-
 const canRegister = computed(() => role.value === 'patient');
 
 watch(
@@ -43,6 +44,16 @@ watch(
     if (nextRole === 'patient' || nextRole === 'doctor' || nextRole === 'admin') {
       role.value = nextRole;
       if (nextRole !== 'patient') mode.value = 'login';
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => route.query.reason,
+  (reason) => {
+    if (reason === 'expired') {
+      expiredNotice.value = '登录已过期，请重新登录';
     }
   },
   { immediate: true },
@@ -143,6 +154,7 @@ async function submit() {
         </div>
       </template>
 
+      <p v-if="expiredNotice" class="text-warning text-xs p-2 bg-yellow-50 rounded-md">{{ expiredNotice }}</p>
       <p v-if="authStore.error" class="text-danger text-xs p-2 bg-red-50 rounded-md">{{ authStore.error }}</p>
 
       <button class="btn-primary w-full" type="submit" @click="submit" :disabled="authStore.loading || submitted">

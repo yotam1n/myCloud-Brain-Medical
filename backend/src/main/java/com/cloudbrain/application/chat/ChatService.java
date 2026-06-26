@@ -88,6 +88,11 @@ public class ChatService {
 
     @Transactional
     public SseEmitter streamChat(Long sessionId, Long userId, String message, String userRole) {
+        return streamChat("CHAT", sessionId, userId, message, userRole);
+    }
+
+    @Transactional
+    public SseEmitter streamChat(String taskScope, Long sessionId, Long userId, String message, String userRole) {
         ChatSessionEntity session = sessionRepo.findById(sessionId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND.value(), "Session not found"));
         if (!session.getUserId().equals(userId)) {
@@ -107,8 +112,8 @@ public class ChatService {
             try {
                 StringBuilder fullResponse = new StringBuilder();
 
-                AIModels.ResolvedAIConfig config = configResolver.resolve("CHAT");
-                AIModels.ResolvedPromptTemplate template = promptTemplateService.resolve("CHAT", null,
+                AIModels.ResolvedAIConfig config = configResolver.resolve(taskScope);
+                AIModels.ResolvedPromptTemplate template = promptTemplateService.resolve(taskScope, null,
                         Map.of("userRole", userRole, "inputText", message.trim()));
 
                 if (config == null || config.provider() == null || config.provider().isBlank()
@@ -131,7 +136,7 @@ public class ChatService {
 
                     AIProvider provider = providerResolver.resolve(config.provider());
                     AIModels.AIChatRequest request = new AIModels.AIChatRequest(
-                            "CHAT",
+                            taskScope,
                             config.provider(),
                             config.modelName(),
                             config.apiUrl(),
