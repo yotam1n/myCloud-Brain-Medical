@@ -106,19 +106,26 @@ public class AiStreamSessionService {
                     throw new RuntimeException(exception);
                 }
             };
+            java.util.function.Consumer<String> thinkingConsumer = thinking -> {
+                try {
+                    send(emitter, "thinking", Map.of("text", thinking));
+                } catch (IOException exception) {
+                    throw new RuntimeException(exception);
+                }
+            };
             Object result = "MEDICAL_RECORD".equals(session.taskType())
                     ? workflowService.generateMedicalRecord(session.actorContext(), new MedicalRecordGenerateRequest(
                             session.request().registrationId(),
                             session.request().conversationText(),
                             session.request().diagnosisDirection(),
                             session.request().attachments()
-                    ), chunkConsumer)
+                    ), chunkConsumer, thinkingConsumer)
                     : workflowService.suggestDiagnosis(session.actorContext(), new DiagnosisSuggestionRequest(
                             session.request().registrationId(),
                             session.request().conversationText(),
                             session.request().diagnosisDirection(),
                             session.request().attachments()
-                    ), chunkConsumer);
+                    ), chunkConsumer, thinkingConsumer);
             String text = result instanceof MedicalRecordSummary medicalRecord
                     ? medicalRecordText(medicalRecord)
                     : diagnosisText((DiagnosisSuggestionResponse) result);
