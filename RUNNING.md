@@ -1,8 +1,8 @@
 # Running
 
 JDK:
-- Java 17
-- Default path: `C:\Program Files\Java\jdk-17`
+- Java 21
+- Default path: `C:\Program Files\Java\jdk-21`
 
 Backend with project-local MySQL (recommended on this machine):
 ```powershell

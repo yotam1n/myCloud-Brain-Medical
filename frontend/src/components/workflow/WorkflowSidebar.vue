@@ -93,7 +93,7 @@ defineExpose({ steps, activeStepId, updateStepContent, setStepCompleted, setStep
     <!-- Backdrop -->
     <div
       v-if="open"
-      class="fixed inset-0 z-40 bg-black/20 transition-opacity"
+      class="fixed inset-0 z-40 bg-black/40 transition-opacity"
       @click="emit('close')"
     />
 

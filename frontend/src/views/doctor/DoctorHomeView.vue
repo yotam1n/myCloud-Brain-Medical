@@ -1093,7 +1093,9 @@ onBeforeUnmount(() => {
     />
 
     <div class="flex-1 overflow-y-auto p-6">
-      <p v-if="error" class="mb-4 p-3 rounded-md bg-red-50 text-danger text-sm">{{ error }}</p>
+      <p v-if="error" class="mb-4 p-3 rounded-md bg-red-50 text-danger text-sm">{{ error }}
+          <button class="ml-2 underline cursor-pointer hover:text-red-800" @click="error = ''">关闭</button>
+        </p>
 
       <!-- Topline stats -->
       <div class="flex items-center gap-3 mb-6 flex-wrap">

@@ -44,6 +44,7 @@ defineEmits<{
     <button
       type="button"
       class="p-1 rounded hover:bg-white/10 transition"
+      aria-label="刷新状态"
       @click="$emit('refresh')"
       title="刷新状态"
     >
@@ -54,6 +55,7 @@ defineEmits<{
       v-if="authStore.isAuthenticated"
       type="button"
       class="p-1 rounded hover:bg-white/10 transition"
+      aria-label="退出登录"
       title="退出登录"
       @click="async () => { await authStore.logout(); await router.push('/login'); }"
     >

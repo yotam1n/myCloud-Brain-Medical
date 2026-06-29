@@ -65,8 +65,9 @@ const { workspace } = defineProps<{ workspace: any }>();
             v-for="n in 5"
             :key="n"
             type="button"
-            class="text-2xl transition"
+            class="text-2xl transition-colors"
             :class="n <= workspace.feedbackForm.rating ? 'text-warning' : 'text-text-secondary/30'"
+            :aria-label="`评分 ${n} 星`"
             @click="workspace.feedbackForm.rating = n"
           >
             ★

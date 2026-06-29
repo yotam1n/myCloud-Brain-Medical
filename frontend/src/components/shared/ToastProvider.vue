@@ -34,8 +34,8 @@ const bgMap: Record<string, string> = {
 </template>
 
 <style scoped>
-.toast-enter-active { transition: all 0.25s ease-out; }
-.toast-leave-active { transition: all 0.2s ease-in; }
+.toast-enter-active { transition: transform 0.25s ease-out, opacity 0.25s ease-out; }
+.toast-leave-active { transition: transform 0.2s ease-in, opacity 0.2s ease-in; }
 .toast-enter-from { opacity: 0; transform: translateX(50px); }
 .toast-leave-to { opacity: 0; transform: translateX(50px); }
 </style>

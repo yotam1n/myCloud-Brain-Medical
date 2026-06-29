@@ -80,7 +80,7 @@ const { workspace } = defineProps<{ workspace: any }>();
               <td class="py-2.5"><StatusChip :tone="item.status === 'ACTIVE' ? 'success' : 'neutral'">{{ item.status === 'ACTIVE' ? '启用' : '停用' }}</StatusChip></td>
               <td class="py-2.5"><div class="flex gap-1">
                 <button class="btn-ghost !p-1 !text-xs" type="button" @click="workspace.selectDoctor(item)">编辑</button>
-                <button class="btn-ghost !p-1 !text-xs" type="button" @click="workspace.currentKind = 'doctor'; workspace.currentId = item.id; workspace.toggleCurrent()" :disabled="workspace.saving">切换</button>
+                <button class="btn-ghost !p-1 !text-xs" type="button" @click="workspace.currentKind = 'doctor'; workspace.currentId = item.id; workspace.toggleCurrent()" :disabled="workspace.saving">{{ item.status === 'ACTIVE' ? '停用' : '启用' }}</button>
               </div></td>
             </tr>
           </tbody>
@@ -110,7 +110,7 @@ const { workspace } = defineProps<{ workspace: any }>();
               <td class="py-2.5"><StatusChip :tone="item.status === 'ACTIVE' ? 'success' : 'neutral'">{{ item.status === 'ACTIVE' ? '启用' : '停用' }}</StatusChip></td>
               <td class="py-2.5"><div class="flex gap-1">
                 <button class="btn-ghost !p-1 !text-xs" type="button" @click="workspace.selectDrug(item)">编辑</button>
-                <button class="btn-ghost !p-1 !text-xs" type="button" @click="workspace.currentKind = 'drug'; workspace.currentId = item.id; workspace.toggleCurrent()" :disabled="workspace.saving">切换</button>
+                <button class="btn-ghost !p-1 !text-xs" type="button" @click="workspace.currentKind = 'drug'; workspace.currentId = item.id; workspace.toggleCurrent()" :disabled="workspace.saving">{{ item.status === 'ACTIVE' ? '停用' : '启用' }}</button>
               </div></td>
             </tr>
           </tbody>

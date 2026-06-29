@@ -39,22 +39,22 @@ function handleKeydown(e: KeyboardEvent) {
       @keydown="handleKeydown"
     />
     <button v-if="!isStreaming" class="chat-input__btn chat-input__btn--send"
-            :disabled="disabled || !input.trim()" @click="handleSend" title="发送">
+            :disabled="disabled || !input.trim()" @click="handleSend" title="发送" aria-label="发送消息">
       <Send :size="16" />
     </button>
     <button v-else class="chat-input__btn chat-input__btn--stop"
-            @click="emit('stop')" title="停止生成">
+            @click="emit('stop')" title="停止生成" aria-label="停止生成">
       <Square :size="14" />
     </button>
   </div>
 </template>
 
 <style scoped>
-.chat-input { display: flex; gap: 8px; align-items: flex-end; padding: 12px; border-top: 1px solid var(--border); background: var(--surface); }
-.chat-input__field { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-family: inherit; resize: none; outline: none; background: var(--bg); color: var(--text); }
-.chat-input__field:focus { border-color: var(--primary); }
+.chat-input { display: flex; gap: 8px; align-items: flex-end; padding: 12px; border-top: 1px solid var(--color-border); background: var(--color-surface); }
+.chat-input__field { flex: 1; border: 1px solid var(--color-border); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-family: inherit; resize: none; outline: none; background: var(--color-card); color: var(--color-text-main); }
+.chat-input__field:focus { border-color: var(--color-brand); }
 .chat-input__btn { width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.chat-input__btn--send { background: var(--primary); color: #fff; }
+.chat-input__btn--send { background: var(--color-brand); color: #fff; }
 .chat-input__btn--send:disabled { opacity: .4; cursor: not-allowed; }
-.chat-input__btn--stop { background: var(--danger); color: #fff; }
+.chat-input__btn--stop { background: var(--color-danger); color: #fff; }
 </style>

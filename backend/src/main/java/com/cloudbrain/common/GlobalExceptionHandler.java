@@ -29,9 +29,12 @@ public class GlobalExceptionHandler {
         return failure(HttpStatus.BAD_REQUEST.value(), exception.getMessage());
     }
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleException(Exception exception) {
-        return failure(HttpStatus.INTERNAL_SERVER_ERROR.value(), "internal server error");
+        log.error("Unhandled exception", exception);
+        return failure(HttpStatus.INTERNAL_SERVER_ERROR.value(), exception.getMessage() != null ? exception.getMessage() : "internal server error");
     }
 
     private ResponseEntity<Result<Void>> failure(int code, String message) {

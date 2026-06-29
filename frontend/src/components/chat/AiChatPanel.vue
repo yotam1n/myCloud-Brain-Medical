@@ -32,11 +32,11 @@ async function handleDeleteSession(id: number) { await store.removeSession(id); 
       <div class="chat-panel__header">
         <span class="chat-panel__title">🧠 AI 助手</span>
         <div class="chat-panel__actions">
-          <button class="chat-panel__action-btn" @click="minimized = !minimized" :title="minimized ? '展开' : '最小化'">
+          <button class="chat-panel__action-btn" @click="minimized = !minimized" :title="minimized ? '展开' : '最小化'" :aria-label="minimized ? '展开' : '最小化'">
             <Maximize2 v-if="minimized" :size="14" />
             <Minimize2 v-else :size="14" />
           </button>
-          <button class="chat-panel__action-btn" @click="emit('close')" title="关闭">
+          <button class="chat-panel__action-btn" @click="emit('close')" title="关闭" aria-label="关闭AI助手">
             <X :size="14" />
           </button>
         </div>
@@ -74,13 +74,13 @@ async function handleDeleteSession(id: number) { await store.removeSession(id); 
 <style scoped>
 .chat-panel {
   position: fixed; bottom: 80px; right: 20px; width: 680px; height: 520px;
-  background: var(--surface); border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.15);
+  background: var(--color-surface); border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.15);
   display: flex; flex-direction: column; z-index: 1000; overflow: hidden;
 }
 .chat-panel.minimized { height: auto; width: 260px; }
 .chat-panel__header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 14px; background: var(--primary); color: #fff; user-select: none;
+  padding: 10px 14px; background: var(--color-brand); color: #fff; user-select: none;
 }
 .chat-panel__title { font-size: 14px; font-weight: 600; }
 .chat-panel__actions { display: flex; gap: 4px; }
@@ -92,13 +92,13 @@ async function handleDeleteSession(id: number) { await store.removeSession(id); 
 .chat-panel__action-btn:hover { background: rgba(255,255,255,.3); }
 .chat-panel__body { flex: 1; display: flex; overflow: hidden; }
 .chat-panel__main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.chat-panel__empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--muted); padding: 24px; }
+.chat-panel__empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--color-text-secondary); padding: 24px; }
 .chat-panel__empty p { margin: 0; font-size: 14px; }
 .chat-panel__quick-start { display: flex; gap: 8px; margin-top: 12px; width: 100%; max-width: 320px; }
-.chat-panel__quick-input { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; }
-.chat-panel__quick-input:focus { border-color: var(--primary); }
-.chat-panel__quick-btn { padding: 8px 16px; border: none; border-radius: 8px; background: var(--primary); color: #fff; cursor: pointer; font-size: 13px; }
+.chat-panel__quick-input { flex: 1; border: 1px solid var(--color-border); border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; }
+.chat-panel__quick-input:focus { border-color: var(--color-brand); }
+.chat-panel__quick-btn { padding: 8px 16px; border: none; border-radius: 8px; background: var(--color-brand); color: #fff; cursor: pointer; font-size: 13px; }
 .chat-panel__messages { flex: 1; overflow-y: auto; padding: 16px; }
-.panel-enter-active, .panel-leave-active { transition: all .25s ease; }
+.panel-enter-active, .panel-leave-active { transition: transform .25s ease, opacity .25s ease; }
 .panel-enter-from, .panel-leave-to { opacity: 0; transform: translateY(20px) scale(.96); }
 </style>

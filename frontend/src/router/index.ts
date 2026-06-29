@@ -3,7 +3,6 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { pinia } from '@/stores/pinia';
 import { useAuthStore } from '@/stores/auth';
 import AuthView from '@/views/auth/AuthView.vue';
-import HealthView from '@/views/HealthView.vue';
 import HomeView from '@/views/HomeView.vue';
 
 const router = createRouter({
@@ -13,11 +12,6 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: HomeView,
-    },
-    {
-      path: '/health',
-      name: 'health',
-      component: HealthView,
     },
     {
       path: '/login',

@@ -158,7 +158,8 @@ async function submit() {
       <p v-if="authStore.error" class="text-danger text-xs p-2 bg-red-50 rounded-md">{{ authStore.error }}</p>
 
       <button class="btn-primary w-full" type="submit" @click="submit" :disabled="authStore.loading || submitted">
-        <LogIn :size="16" />
+        <UserPlus v-if="mode === 'register' && role === 'patient'" :size="16" />
+        <LogIn v-else :size="16" />
         <span>{{ authStore.loading ? '处理中...' : (mode === 'register' && role === 'patient' ? '注册' : '登录') }}</span>
       </button>
     </div>

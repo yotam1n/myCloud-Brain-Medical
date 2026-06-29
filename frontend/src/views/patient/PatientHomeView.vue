@@ -536,7 +536,9 @@ onMounted(() => {
   <PhoneFrame>
     <div class="flex flex-col h-full">
       <div class="flex-1 overflow-y-auto">
-        <p v-if="error" class="mx-4 mt-3 p-2.5 rounded-md bg-red-50 text-danger text-xs">{{ error }}</p>
+        <p v-if="error" class="mx-4 mt-3 p-2.5 rounded-md bg-red-50 text-danger text-xs">{{ error }}
+          <button class="ml-2 underline cursor-pointer hover:text-red-800" @click="error = ''">关闭</button>
+        </p>
 
         <RouterView v-slot="{ Component: PanelComp }">
           <Suspense>

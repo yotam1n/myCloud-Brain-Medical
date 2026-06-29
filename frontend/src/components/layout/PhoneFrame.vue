@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onBeforeUnmount, ref } from 'vue';
 import { Battery, Signal, Wifi } from 'lucide-vue-next';
 
 const time = ref(new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }));
-setInterval(() => {
+const clockTimer = setInterval(() => {
   time.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
 }, 60000);
+
+onBeforeUnmount(() => {
+  clearInterval(clockTimer);
+});
 </script>
 
 <template>

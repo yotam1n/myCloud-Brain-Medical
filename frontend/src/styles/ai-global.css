@@ -3,7 +3,7 @@
 /* All AI-generated content gets a light blue accent */
 .ai-content {
   background: #f0f7ff;
-  border-left: 3px solid var(--primary);
+  border-left: 3px solid var(--color-brand);
   padding: 12px 16px;
   border-radius: 6px;
   margin: 8px 0;
@@ -18,8 +18,8 @@
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 10px;
-  background: var(--primary-soft);
-  color: var(--primary);
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -33,7 +33,7 @@
   padding: 2px 8px;
   border-radius: 10px;
   background: #fff3cd;
-  color: var(--accent);
+  color: var(--color-warning);
   font-weight: 500;
 }
 
@@ -47,7 +47,7 @@
   display: inline-block;
   width: 2px;
   height: 1.1em;
-  background: var(--primary);
+  background: var(--color-brand);
   margin-left: 2px;
   vertical-align: text-bottom;
   animation: ai-cursor-blink 1s step-end infinite;
@@ -60,7 +60,7 @@
 }
 
 .ai-skeleton {
-  background: var(--surface-soft);
+  background: var(--color-surface);
   border-radius: 6px;
   animation: ai-pulse 1.5s ease-in-out infinite;
   min-height: 20px;
@@ -74,7 +74,7 @@
   border: 1px solid #f0d77b;
   border-radius: 8px;
   font-size: 13px;
-  color: var(--accent);
+  color: var(--color-warning);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -106,14 +106,14 @@
   top: 8px;
   right: 8px;
   border: none;
-  background: var(--surface);
+  background: var(--color-surface);
   border-radius: 4px;
   padding: 2px 8px;
   font-size: 12px;
   cursor: pointer;
   opacity: 0;
   transition: opacity .2s;
-  color: var(--muted);
+  color: var(--color-text-secondary);
 }
 
 .ai-content:hover .ai-copy-btn { opacity: 1; }

@@ -29,6 +29,7 @@ function go(delta: number) {
         type="button"
         :disabled="page <= 1"
         title="上一页"
+        aria-label="上一页"
         @click="go(-1)"
       >
         <ChevronLeft :size="16" />
@@ -41,6 +42,7 @@ function go(delta: number) {
         type="button"
         :disabled="page >= pageCount"
         title="下一页"
+        aria-label="下一页"
         @click="go(1)"
       >
         <ChevronRight :size="16" />

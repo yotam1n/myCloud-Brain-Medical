@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import { Sparkles, PanelRightOpen, CheckCircle2 } from 'lucide-vue-next';
+import { Sparkles, PanelRightOpen, X } from 'lucide-vue-next';
 import SectionCard from '@/components/shared/SectionCard.vue';
 import EmptyState from '@/components/shared/EmptyState.vue';
 import LoadingSkeleton from '@/components/shared/LoadingSkeleton.vue';
@@ -304,12 +304,10 @@ function beginButtonLabel() {
               type="button"
               @click="workspace.beginSelectedConsultation()"
               :disabled="workspace.startingConsultation || !workspace.canBeginSelectedConsultation"
-              :class="{ 'opacity-75 cursor-default': !workspace.canBeginSelectedConsultation }"
             >
-              <CheckCircle2 v-if="!workspace.canBeginSelectedConsultation" :size="16" />
               {{ beginButtonLabel() }}
             </button>
-              <button class="btn-danger" type="button" @click="workspace.requestCompleteSelectedConsultation()" :disabled="workspace.completingConsultation">
+              <button v-if="workspace.selectedRegistrationId" class="btn-danger" type="button" @click="workspace.requestCompleteSelectedConsultation()" :disabled="workspace.completingConsultation">
                 {{ workspace.completingConsultation ? '处理中...' : '结束就诊' }}
               </button>
             <span
@@ -388,8 +386,8 @@ function beginButtonLabel() {
               <button class="btn-primary" type="button" @click="workspace.saveCurrentMedicalRecord()" :disabled="workspace.savingRecord">
                 {{ workspace.savingRecord ? '保存中...' : '保存病历' }}
               </button>
-              <button class="btn-ghost" type="button" @click="workspace.saveCurrentMedicalRecord()" :disabled="!workspace.recordForm.chiefComplaint">
-                采纳全部
+              <button class="btn-ghost" type="button" @click="workspace.adoptCurrentDiagnosis?.(); workspace.saveCurrentMedicalRecord()" :disabled="!workspace.recordForm.chiefComplaint">
+                采纳并保存
               </button>
               <button class="btn-ghost" type="button" @click="runMedicalRecordWorkflow()" :disabled="workspace.generatingRecord">
                 重新生成
@@ -428,9 +426,11 @@ function beginButtonLabel() {
                       v-if="workspace.prescriptionItems.length > 1"
                       class="btn-ghost !p-1 !text-danger"
                       type="button"
+                      title="移除药品"
+                      aria-label="移除药品"
                       @click="workspace.removePrescriptionItem(item.key)"
                     >
-                      ✕
+                      <X :size="16" />
                     </button>
                   </div>
 
@@ -459,6 +459,7 @@ function beginButtonLabel() {
                     :key="drug.id"
                     class="rounded-full bg-white px-3 py-1 text-xs text-text-main shadow-sm hover:text-brand"
                     type="button"
+                    :aria-label="`快速选择 ${drug.name}`"
                     @click="workspace.choosePrescriptionDrug(workspace.prescriptionItems[workspace.prescriptionItems.length - 1], drug.id)"
                   >
                     {{ drug.name }}
@@ -497,6 +498,7 @@ function beginButtonLabel() {
                   class="btn-ghost !py-1 text-xs"
                   type="button"
                   :disabled="workspace.diagnosisUpdating"
+                  aria-label="忽略诊断建议"
                   @click="workspace.ignoreCurrentDiagnosis('医生选择不采用该诊断建议')"
                 >
                   忽略建议
@@ -512,6 +514,7 @@ function beginButtonLabel() {
                     class="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-black/10 hover:bg-black/20 disabled:opacity-50"
                     type="button"
                     :disabled="workspace.diagnosisUpdating || workspace.diagnosisSuggestion.adoptionStatus === 'ADOPTED'"
+                    :aria-label="`采纳 ${diag.name}`"
                     @click="adoptDiagnosis(diag.name)"
                   >
                     采纳
@@ -593,6 +596,7 @@ function beginButtonLabel() {
       class="fixed right-0 top-1/2 -translate-y-1/2 z-30 w-9 h-20 bg-brand text-white rounded-l-lg flex items-center justify-center shadow-lg hover:bg-brand-dark transition cursor-pointer"
       @click="toggleSidebar"
       title="AI 工作台"
+      aria-label="AI 工作台"
     >
       <PanelRightOpen :size="18" />
     </button>
