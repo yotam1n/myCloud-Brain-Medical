@@ -56,10 +56,10 @@ abstract class AbstractOpenAICompatibleProvider implements AIProvider {
     }
 
     @Override
-    public AIModels.AIChatResponse chatStream(AIModels.AIChatRequest request, Consumer<String> chunkConsumer) {
+    public AIModels.AIChatResponse chatStream(AIModels.AIChatRequest request, Consumer<String> chunkConsumer, Consumer<String> thinkingConsumer) {
         try {
-            HttpResponse<InputStream> response = httpClient.send(buildRequest(request, true, chunkConsumer), HttpResponse.BodyHandlers.ofInputStream());
-            return parseStreamResponse(request, response, chunkConsumer);
+            HttpResponse<InputStream> response = httpClient.send(buildRequest(request, true, null), HttpResponse.BodyHandlers.ofInputStream());
+            return parseStreamResponse(request, response, chunkConsumer, thinkingConsumer);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new AIProviderException(providerName + " stream interrupted", exception);
@@ -164,7 +164,8 @@ abstract class AbstractOpenAICompatibleProvider implements AIProvider {
 
     private AIModels.AIChatResponse parseStreamResponse(AIModels.AIChatRequest request,
                                                         HttpResponse<InputStream> response,
-                                                        Consumer<String> chunkConsumer) throws IOException {
+                                                        Consumer<String> chunkConsumer,
+                                                        Consumer<String> thinkingConsumer) throws IOException {
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             String errorBody = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
             throw new AIProviderException(providerName + " stream response " + response.statusCode() + ": " + errorBody);
@@ -193,12 +194,16 @@ abstract class AbstractOpenAICompatibleProvider implements AIProvider {
                     responseId = root.path("id").asText(null);
                 }
                 finishReason = extractFinishReason(root);
-                String deltaText = extractDeltaText(root);
-                if (deltaText != null && !deltaText.isBlank()) {
-                    builder.append(deltaText);
+                String replyDelta = extractReplyDelta(root);
+                if (!replyDelta.isBlank()) {
+                    builder.append(replyDelta);
                     if (chunkConsumer != null) {
-                        chunkConsumer.accept(deltaText);
+                        chunkConsumer.accept(replyDelta);
                     }
+                }
+                String thinkingDelta = extractThinkingDelta(root);
+                if (!thinkingDelta.isBlank() && thinkingConsumer != null) {
+                    thinkingConsumer.accept(thinkingDelta);
                 }
             }
         }
@@ -225,27 +230,24 @@ abstract class AbstractOpenAICompatibleProvider implements AIProvider {
             if (!content.isBlank()) {
                 return content;
             }
-            String reasoning = extractContent(message.path("reasoning_content"));
-            if (!reasoning.isBlank()) {
-                return reasoning;
-            }
         }
         return "";
     }
 
-    private String extractDeltaText(JsonNode root) {
+    private String extractReplyDelta(JsonNode root) {
         JsonNode choices = root.path("choices");
         if (choices.isArray() && !choices.isEmpty()) {
-            JsonNode choice = choices.get(0);
-            JsonNode delta = choice.path("delta");
-            String content = extractContent(delta.path("content"));
-            if (!content.isBlank()) {
-                return content;
-            }
-            String reasoning = extractContent(delta.path("reasoning_content"));
-            if (!reasoning.isBlank()) {
-                return reasoning;
-            }
+            JsonNode delta = choices.get(0).path("delta");
+            return extractContent(delta.path("content"));
+        }
+        return "";
+    }
+
+    private String extractThinkingDelta(JsonNode root) {
+        JsonNode choices = root.path("choices");
+        if (choices.isArray() && !choices.isEmpty()) {
+            JsonNode delta = choices.get(0).path("delta");
+            return extractContent(delta.path("reasoning_content"));
         }
         return "";
     }

@@ -8,5 +8,9 @@ public interface AIProvider {
 
     AIModels.AIChatResponse chat(AIModels.AIChatRequest request);
 
-    AIModels.AIChatResponse chatStream(AIModels.AIChatRequest request, Consumer<String> chunkConsumer);
+    AIModels.AIChatResponse chatStream(AIModels.AIChatRequest request, Consumer<String> chunkConsumer, Consumer<String> thinkingConsumer);
+
+    default AIModels.AIChatResponse chatStream(AIModels.AIChatRequest request, Consumer<String> chunkConsumer) {
+        return chatStream(request, chunkConsumer, null);
+    }
 }

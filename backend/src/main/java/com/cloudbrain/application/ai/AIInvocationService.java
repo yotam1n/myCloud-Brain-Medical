@@ -29,6 +29,17 @@ public class AIInvocationService {
                                                     String fallbackText,
                                                     boolean stream,
                                                     Consumer<String> chunkConsumer) {
+        return chat(taskType, deptCode, variables, attachments, fallbackText, stream, chunkConsumer, null);
+    }
+
+    public AIModels.AIExecutionOutcome<String> chat(String taskType,
+                                                    String deptCode,
+                                                    Map<String, String> variables,
+                                                    List<AIModels.AIContentPart> attachments,
+                                                    String fallbackText,
+                                                    boolean stream,
+                                                    Consumer<String> chunkConsumer,
+                                                    Consumer<String> thinkingConsumer) {
         String normalizedTaskType = normalize(taskType);
         AIModels.ResolvedAIConfig config = configResolver.resolve(normalizedTaskType);
         AIModels.ResolvedPromptTemplate template = promptTemplateService.resolve(normalizedTaskType, deptCode, variables);
@@ -59,7 +70,7 @@ public class AIInvocationService {
                     maxTokensFor(normalizedTaskType),
                     messages
             );
-            AIModels.AIChatResponse response = stream ? provider.chatStream(request, chunkConsumer) : provider.chat(request);
+            AIModels.AIChatResponse response = stream ? provider.chatStream(request, chunkConsumer, thinkingConsumer) : provider.chat(request);
             String text = AIModels.firstNonBlank(response.text(), fallbackText);
             AIModels.AIInvocationMeta meta = AIModels.AIInvocationMeta.remote(
                     normalizedTaskType,
