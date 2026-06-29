@@ -21,6 +21,9 @@ public class ChatMessageEntity extends BaseAuditableEntity {
     @Column(name = "ai_meta", columnDefinition = "TEXT")
     private String aiMeta;
 
+    @Column(name = "thinking_content", columnDefinition = "TEXT")
+    private String thinkingContent;
+
     protected ChatMessageEntity() {}
 
     public ChatMessageEntity(ChatSessionEntity session, String role, String content) {
@@ -29,10 +32,19 @@ public class ChatMessageEntity extends BaseAuditableEntity {
         this.content = content;
     }
 
+    public ChatMessageEntity(ChatSessionEntity session, String role, String content, String thinkingContent) {
+        this.session = Objects.requireNonNull(session);
+        this.role = Objects.requireNonNull(role);
+        this.content = content;
+        this.thinkingContent = thinkingContent;
+    }
+
     public ChatSessionEntity getSession() { return session; }
     public String getRole() { return role; }
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
     public String getAiMeta() { return aiMeta; }
     public void setAiMeta(String aiMeta) { this.aiMeta = aiMeta; }
+    public String getThinkingContent() { return thinkingContent; }
+    public void setThinkingContent(String thinkingContent) { this.thinkingContent = thinkingContent; }
 }
