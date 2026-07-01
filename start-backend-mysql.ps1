@@ -25,7 +25,7 @@ function Find-JDK {
     }
     $inPath = (Get-Command java.exe -ErrorAction SilentlyContinue).Source
     if ($inPath) {
-        $resolved = (Get-Item $inPath).Target ?? $inPath
+        $resolved = if ((Get-Item $inPath).Target) { (Get-Item $inPath).Target } else { $inPath }
         return Split-Path -Parent (Split-Path -Parent $resolved)
     }
     throw "JDK not found. Set `$env:JAVA_HOME to your JDK installation path."
