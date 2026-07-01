@@ -1064,9 +1064,6 @@ onBeforeUnmount(() => {
         </p>
 
       <div class="flex items-center gap-3 mb-6 flex-wrap">
-        <StatusChip :tone="notificationSocketState === 'connected' ? 'success' : 'neutral'" :dot="true">
-          通知 {{ notificationSocketState === 'connected' ? '已连接' : '未连接' }}
-        </StatusChip>
         <span class="flex-1" />
         <button class="btn-ghost" type="button" @click="loadAll" :disabled="loading">
           <RefreshCw :size="16" :class="{ 'animate-spin': loading }" />
